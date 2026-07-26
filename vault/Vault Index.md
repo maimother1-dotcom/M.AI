@@ -1,4 +1,4 @@
-# Vault Index — [YOUR_NAME]
+# Vault Index — Bijoy Halder
 
 > Navigation hub. All major notes linked here.
 
@@ -26,6 +26,7 @@
 
 - [[Notes/Playbooks/Batch Planning Playbook]] — Plan a full week in one session
 - [[Notes/Playbooks/Testing and Delivery Protocol]] — QA before shipping anything
+- [[Notes/Playbooks/Morning Content Ritual]] — Daily LinkedIn posts: Indian finance, international finance, Indian pharma
 
 ---
 

@@ -18,4 +18,4 @@ HTML(string=html_content).write_pdf("output.pdf")
 
 All existing ReportLab rules (Paragraph cells, colWidths summing to CW, double-bracket cells) no longer apply when using WeasyPrint. The CSS handles all layout and typography natively.
 
-**Why:** [USER] explicitly requested WeasyPrint after seeing the visual difference. "THIS ONE!!!!"
+**Why:** Bijoy explicitly requested WeasyPrint after seeing the visual difference. "THIS ONE!!!!"

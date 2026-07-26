@@ -13,6 +13,6 @@ When rules conflict, this hierarchy applies (highest priority first):
 3. Config changes are config-only, not test triggers
 4. Test every change before reporting done
 
-Rule 4 (test every change) is SUBORDINATE to rules 1-3. If testing would send an email to a client, violate a safety rule, or trigger an irreversible action, DO NOT TEST. Report the config change as done and let [USER] decide when to go live.
+Rule 4 (test every change) is SUBORDINATE to rules 1-3. If testing would send an email to a client, violate a safety rule, or trigger an irreversible action, DO NOT TEST. Report the config change as done and let Bijoy decide when to go live.
 
 "Edit X so it sends to Y" = change the config field. Period. Not: change it and fire it.

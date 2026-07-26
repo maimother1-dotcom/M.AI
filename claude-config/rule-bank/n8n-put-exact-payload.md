@@ -40,6 +40,6 @@ payload = {
 }
 ```
 
-**After every PUT:** credentials are stripped from nodes. Reconnect immediately via web-tester (Playwright) — do not ask [USER] to do it manually.
+**After every PUT:** credentials are stripped from nodes. Reconnect immediately via web-tester (Playwright) — do not ask Bijoy to do it manually.
 
 **How to apply:** Before any PUT, filter the fetched workflow object to only the 5 allowed keys above. Never pass the raw fetched object back.

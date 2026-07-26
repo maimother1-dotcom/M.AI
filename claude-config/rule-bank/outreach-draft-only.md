@@ -6,4 +6,4 @@ applies_to: [outreach]
 created: 2026-04-01
 source: correction
 ---
-Claude does NOT send replies on GetSales or LinkedIn. Draft only mode. [USER] handles all replies manually.
+Claude does NOT send replies on GetSales or LinkedIn. Draft only mode. Bijoy handles all replies manually.

@@ -20,7 +20,7 @@ Instead:
 - Rely on extended thinking to reason about what's unique to each profile
 - List 3-5 CTA options and instruct Claude to vary based on what fits the person
 
-Why: [USER] shipped a LinkedIn outreach tool with "Happy to share more context on the live roles if you accept this email :)" listed as "default CTA" in the system prompt. Every single one of the 8 generated emails ended with that exact line. Abby would have flagged it immediately.
+Why: Bijoy shipped a LinkedIn outreach tool with "Happy to share more context on the live roles if you accept this email :)" listed as "default CTA" in the system prompt. Every single one of the 8 generated emails ended with that exact line. Abby would have flagged it immediately.
 
 How to apply: Before shipping any message generation system, test with 5+ profiles and diff the outputs. If ANY exact multi-word phrase appears across 3+ outputs, the prompt is templated. Fix the prompt, not just the example.
 

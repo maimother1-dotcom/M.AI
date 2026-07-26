@@ -18,6 +18,6 @@ Use the web-tester agent (Playwright) to open the PDF in the browser and screens
 
 "It built without errors" is NOT verification. Open the file, look at it page by page.
 
-**Why:** [USER] has received multiple broken PDFs where cover page content overlaid on inner pages, metric card labels showed box characters, and backgrounds were wrong. Repeated himself multiple times.
+**Why:** Bijoy has received multiple broken PDFs where cover page content overlaid on inner pages, metric card labels showed box characters, and backgrounds were wrong. Repeated himself multiple times.
 
 **How to apply:** After every `doc.build()` or `c.save()`, render the PDF to images and check each page before calling done.

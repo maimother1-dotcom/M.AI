@@ -12,4 +12,4 @@ NEVER report a feature as working, fixed, or live without personally verifying i
 
 If the feature requires auth, create a real session: insert a known OTP via Supabase, have Playwright log in with it, then test the authenticated flow end-to-end.
 
-[USER] explicitly said: "i told you to fucking verify it on your end" — do not make him say this again.
+Bijoy explicitly said: "i told you to fucking verify it on your end" — do not make him say this again.

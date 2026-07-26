@@ -15,5 +15,5 @@ Research routing rules — NON-NEGOTIABLE:
 "YouTube" / "search YouTube" / "check YouTube":
 → Run ONLY youtube_research(query, max_videos=10). Skip web search entirely.
 
-Never run just web search alone when [USER] asks to "search the web" — YouTube always runs alongside it.
+Never run just web search alone when Bijoy asks to "search the web" — YouTube always runs alongside it.
 Never ask which to use — the phrasing determines the routing automatically.

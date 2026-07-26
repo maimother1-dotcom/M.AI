@@ -2,9 +2,9 @@
 # ntfy notification — sends a push notification to your phone.
 # Usage: echo "message" | bash ntfy-notify.sh
 # Or: bash ntfy-notify.sh "message"
-# Set YOUR_NTFY_TOPIC to your topic (e.g. "AlexClaude")
+# Topic is set below. Subscribe to it in the ntfy phone app to receive these.
 
-NTFY_TOPIC="YOUR_NTFY_TOPIC"
+NTFY_TOPIC="BijoyClaude"
 
 if [ -t 0 ]; then
     MESSAGE="$1"

@@ -11,7 +11,7 @@ When scoping multiple tasks in a planning session:
 
 **Round 1**: For ALL tasks at once, present what Claude already knows and batch ALL questions together. Group by task but ask everything in one message.
 
-**Round 2**: Follow-ups on anything still unclear from [USER]'s answers.
+**Round 2**: Follow-ups on anything still unclear from Bijoy's answers.
 
 **Round 3**: Edge cases and pre-flight concerns.
 
@@ -22,4 +22,4 @@ After scoping, auto-generate:
 2. Active Batch.md with all tasks listed
 3. Director's Brief: "X sessions to launch. Estimated total: ~Y min. You need to provide: [blocked items]. Deliverables: [list]. ONE notification when all done."
 
-**Why:** [USER] wants to enter plan mode, scope 6 tasks, get 6 prompts, and paste them into parallel sessions. All thinking happens in one place.
+**Why:** Bijoy wants to enter plan mode, scope 6 tasks, get 6 prompts, and paste them into parallel sessions. All thinking happens in one place.

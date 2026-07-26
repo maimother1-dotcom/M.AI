@@ -6,7 +6,9 @@ VAULT_PATH="${1:-$HOME_DIR/Documents/My Vault}"
 VECTOR_DIR="$HOME_DIR/.claude/vault-vector"
 VENV_DIR="$VECTOR_DIR/venv"
 FIRST_NAME="${2:-User}"
-PLIST_LABEL="com.${FIRST_NAME,,}.vault-embedder"
+# macOS ships bash 3.2, which has no ${VAR,,} lowercase expansion. Use tr.
+FIRST_NAME_LC=$(printf '%s' "$FIRST_NAME" | tr '[:upper:]' '[:lower:]')
+PLIST_LABEL="com.${FIRST_NAME_LC}.vault-embedder"
 PLIST_PATH="$HOME_DIR/Library/LaunchAgents/$PLIST_LABEL.plist"
 SETTINGS_PATH="$HOME_DIR/.claude/settings.json"
 

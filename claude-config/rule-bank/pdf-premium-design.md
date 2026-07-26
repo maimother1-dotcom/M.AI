@@ -20,6 +20,6 @@ Every PDF must look like $10K was spent on it. No exceptions. This means:
 - Generous padding everywhere. Tight = cheap. Breathing room = premium.
 - Consistent visual language across all pages. No section should look different from another.
 
-**Why:** [USER] explicitly said "anytime you create a PDF it HAS to look like $10k was spent on it."
+**Why:** Bijoy explicitly said "anytime you create a PDF it HAS to look like $10k was spent on it."
 
 **How to apply:** Before writing any PDF generation code, sketch the visual hierarchy first. Cover page, section pages, tables, callouts, footer. Every element must earn its space and look intentional.

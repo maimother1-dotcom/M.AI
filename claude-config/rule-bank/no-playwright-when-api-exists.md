@@ -10,6 +10,6 @@ For n8n: ONLY use the n8n REST API (via Bash curl or Python urllib) or the n8n M
 
 This extends to ALL tools with an API: if an API key exists for a platform, use the API. Playwright/web-tester is ONLY for platforms with zero API access.
 
-**Why:** [USER] explicitly corrected this multiple times — "You have an API key, stop messing around." Browser automation for API-accessible tools wastes time and is fragile.
+**Why:** Bijoy explicitly corrected this multiple times — "You have an API key, stop messing around." Browser automation for API-accessible tools wastes time and is fragile.
 
 **How to apply:** Before spawning web-tester or using Chrome for ANY tool interaction, ask: does this tool have an API? If yes, use the API. Only fall back to browser if the specific operation has NO API equivalent.
