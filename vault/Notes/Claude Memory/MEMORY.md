@@ -34,6 +34,14 @@ Accounting insight worth reusing: the ₹10 first payout is booked as **customer
 
 Three design flaws were caught and fixed before build: a 10-second alarm that auto-dismissed (now the alarm rings until dismissed and 10s is only the reward window), a withdrawal bottleneck that was a Play Store removal risk (now cap earning, pay out in full), and a fake "technical difficulty" message for flagged accounts (now an honest under-review state with appeals).
 
+Retention insight worth reusing: **a capped product cannot buy attention with money, so borrow a habit that already exists.** v0.4 added a Bengali panjika / Tamil daily calendar and a 4×2 home-screen widget. The calendar is the reason to look, AlarmX state is what is seen while looking — no notification needed, no rupees spent, and the ₹15 cap is untouched. It also merged two audiences that looked incompatible: one widget carries both the tithi and the exam countdown.
+
+Two rules encoded there: **never scrape a competitor's copyrighted content** (bengalicalendar.com and tamildailycalendar.com are references for which fields to show, not data sources — everything is computed from ephemeris), and **check the licence before choosing a library** — Swiss Ephemeris under AGPL would have forced the whole app open-source including the anti-farming gate, so the commercial licence is a release blocker.
+
+Domain trap to remember: **Bengali and Tamil solar calendars start their day by different rules**, and getting it wrong shifts every date. Tamil uses a sunset rule, Bengali starts the month the day after the sankranti. First implementation had both wrong; caught only by testing against real festival dates across two years, not one.
+
+Standing principle from this feature: **where being wrong is worse than being absent** (dates people plan fasts on, medical or financial figures), verification against an independent published source is a release blocker, and unverified work gets said out loud rather than implied as done.
+
 ### WBCIL.com (day job)
 International marketing executive role. Client and customer facing. Outreach stack is Brevo plus Anymail Finder, which means the outreach rules in the rule bank apply directly here (`outreach-draft-only`, `outreach-no-em-dash`, `outreach-followup-timing`, `outreach-followup-short`).
 

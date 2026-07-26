@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AlarmX — prototype v0.3</title>
+<title>AlarmX — prototype v0.4</title>
 <style>
   :root{
     --bg:#0b1020; --panel:#151b31; --panel2:#1c2440; --line:#2a3459;
@@ -12,7 +12,8 @@
   }
   *{box-sizing:border-box}
   body{margin:0;background:#070a15;color:var(--ink);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans Devanagari",Arial,sans-serif;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans Devanagari",
+      "Noto Sans Bengali","Noto Sans Tamil",Arial,sans-serif;
     display:flex;justify-content:center;padding:16px}
   #phone{width:100%;max-width:430px;background:var(--bg);border:1px solid var(--line);
     border-radius:26px;overflow:hidden;position:relative;min-height:780px;
@@ -94,9 +95,58 @@
     border-bottom:1px solid var(--line)}
   .pay:last-child{border-bottom:0}
   .pay code{color:var(--dim);font-size:11px}
-  .langrow{display:flex;gap:6px;margin-top:10px}
-  .langrow button{flex:1}
+  .langrow{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+  .langrow button{flex:1 1 28%;padding:10px 6px;font-size:13px}
   .langrow button.sel{border-color:var(--accent);background:rgba(91,140,255,.15)}
+
+  /* ---- 4x2 home-screen widget, PRD 16.4 --------------------------------- */
+  /* A 4x2 Android widget on a 5-column launcher grid is close to 2:1.
+     aspect-ratio holds the real proportion so the preview cannot lie about
+     how much room the content actually has. */
+  .widget{aspect-ratio:2/1;width:100%;display:flex;gap:0;border-radius:16px;
+    overflow:hidden;border:1px solid var(--line);
+    background:linear-gradient(135deg,#111a33,#1b1230);cursor:pointer}
+  .widget .wcal{flex:1 1 62%;padding:10px 11px;display:flex;flex-direction:column;
+    justify-content:space-between;min-width:0}
+  .widget .wstrip{flex:1 1 38%;padding:10px 11px;display:flex;flex-direction:column;
+    justify-content:space-between;min-width:0;
+    background:rgba(0,0,0,.28);border-left:1px solid var(--line)}
+  .widget .wclock{font-size:26px;font-weight:800;line-height:1;letter-spacing:1px}
+  .widget .wgreg{font-size:10.5px;color:var(--dim);margin-top:3px}
+  .widget .wnative{font-size:15px;font-weight:700;color:var(--gold);line-height:1.25}
+  .widget .wpan{font-size:10.5px;color:var(--dim);line-height:1.45;
+    overflow:hidden;text-overflow:ellipsis}
+  .widget .wfest{color:var(--gold)}
+  .widget .wlbl{font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:var(--dim)}
+  .widget .wval{font-size:14px;font-weight:700}
+  .widget .wdot{display:inline-block;width:7px;height:7px;border-radius:99px;
+    background:var(--good);margin-left:5px;vertical-align:middle}
+  .widget .wdot.off{background:var(--line)}
+  .whint{font-size:11px;color:var(--dim);margin-top:8px;line-height:1.5}
+
+  /* ---- calendar screen, PRD 16.5 ---------------------------------------- */
+  .calhead{display:flex;justify-content:space-between;align-items:center;gap:8px;
+    margin-bottom:10px}
+  .calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+  .calgrid .dow{font-size:9.5px;color:var(--dim);text-align:center;padding:4px 0;
+    text-transform:uppercase;letter-spacing:.4px}
+  .calday{background:var(--panel2);border:1px solid transparent;border-radius:8px;
+    padding:4px 2px 5px;text-align:center;cursor:pointer;min-height:44px;
+    display:flex;flex-direction:column;justify-content:center;gap:1px}
+  .calday.pad{background:transparent;cursor:default}
+  .calday .g{font-size:13px;font-weight:600;line-height:1}
+  .calday .n{font-size:9.5px;color:var(--dim);line-height:1}
+  .calday.sel{border-color:var(--accent);background:rgba(91,140,255,.18)}
+  .calday.fest{border-color:var(--gold)}
+  .calday.fest .g{color:var(--gold)}
+  .calday .mark{font-size:8px;line-height:1;color:var(--gold)}
+  .kv{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:6px 0;
+    border-bottom:1px solid var(--line)}
+  .kv:last-child{border-bottom:0}
+  .kv span:first-child{color:var(--dim)}
+  .kv.bad span:last-child{color:var(--bad)}
+  .kv.good span:last-child{color:var(--good)}
+  .syslabel{font-size:11px;color:var(--dim);margin-top:8px;line-height:1.5}
 </style>
 </head>
 <body>
@@ -121,14 +171,20 @@
 </div>
 
 <script src="i18n.js"></script>
+<script src="panchang.js"></script>
 <script>
 "use strict";
 
 /* ---------------------------------------------------------------------------
-   AlarmX prototype v0.3
+   AlarmX prototype v0.4
    Self-contained: no build step, no network. Open the file directly.
-   Implements PRD v0.3 — Rs10 first payout with a 7-day gate, Rs15 cap,
-   Hinglish default, student wedge, India-specific onboarding.
+   Implements PRD v0.4 — Rs10 first payout with a 7-day gate, Rs15 cap,
+   Hinglish default, student wedge, India-specific onboarding, and the
+   regional calendar plus 4x2 home-screen widget (PRD 16).
+
+   The panchang here is computed by panchang.js (Meeus). Production uses
+   Swiss Ephemeris in Moshier mode under a commercial licence — PRD 16.1
+   and 16.7. Nothing is copied from any published almanac.
    --------------------------------------------------------------------------- */
 
 const CAP = 15;                 // PRD 2 — launch cap
@@ -165,9 +221,20 @@ const LB_BASE = [
   ["Vikram", 690], ["Ananya", 610], ["Karan", 540], ["Meera", 470],
 ];
 
+/* Widget and calendar state, PRD 16. `dayOffset` is a dev-bar affordance so
+   midnight rollover is demonstrable without waiting for midnight. */
+const REGIONS = [
+  { key: "kolkata", tradition: "bengali", system: "Vishuddha Siddhanta" },
+  { key: "chennai", tradition: "tamil",   system: "Thirukanitham" },
+  { key: "delhi",   tradition: "bengali", system: "Vishuddha Siddhanta" },
+];
+
 const S = {
   locale: "hi-Latn",
   screen: "lang",
+  region: "kolkata",
+  dayOffset: 0,
+  calSel: null,
   exam: null,
   oem: null,
   surveyIdx: 0, surveyDone: false, surveySkipped: false,
@@ -214,6 +281,94 @@ function inr(n){
 }
 
 /* ---- exam countdown ------------------------------------------------------ */
+/* ---- calendar helpers, PRD 16 ------------------------------------------- */
+function regionMeta(){ return REGIONS.find(r => r.key === S.region) || REGIONS[0]; }
+
+function isoOf(d){
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0")
+       + "-" + String(d.getDate()).padStart(2, "0");
+}
+/* The displayed "today". dayOffset shifts it so the dev bar can roll midnight. */
+function curDate(){
+  const d = new Date();
+  d.setHours(12, 0, 0, 0);                 // midday avoids DST/rounding edges
+  d.setDate(d.getDate() + S.dayOffset);
+  return d;
+}
+function curISO(){ return isoOf(curDate()); }
+
+/* Production precomputes 365 days into Room and the widget reads cache only
+   (PRD 16.1). The prototype memoises instead — same read pattern, no astronomy
+   re-run on every draw. */
+const PAN_CACHE = new Map();
+function pan(iso, region){
+  const key = (region || S.region) + "|" + iso;
+  if (!PAN_CACHE.has(key)) PAN_CACHE.set(key, panchang(iso, region || S.region));
+  return PAN_CACHE.get(key);
+}
+
+/* Which script the panchang element names are printed in. Only bn and ta have
+   native name tables; the other three locales read the Latin transliterations,
+   which is what a Hinglish or English reader expects anyway. */
+function panScript(){ return (S.locale === "bn" || S.locale === "ta") ? S.locale : null; }
+function pName(kind, obj){ return localName(kind, obj, panScript()); }
+function pNum(v){ return localDigits(v, panScript()); }
+
+/* Native-script date line. Bengali regions get the panjika, Tamil gets the
+   daily calendar. The system in use is always named on screen — PRD 16.2. */
+function nativeDate(p, latin){
+  const r = regionMeta();
+  const b = r.tradition === "tamil" ? p.tamil : p.bengali;
+  const month = latin ? b.monthLatin : b.month;
+  const tail = r.tradition === "tamil"
+    ? localYearName(b.yearName, panScript()) : pNum(b.year);
+  return { line: pNum(b.day) + " " + month, year: tail,
+           monthLatin: b.monthLatin, day: pNum(b.day) };
+}
+
+const WEEKDAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+/* ---- the 4x2 widget, PRD 16.4 ------------------------------------------- */
+/* RemoteViews in production, so this preview deliberately uses only what
+   RemoteViews can express: text, a solid background, and two tap targets. */
+function widgetHTML(){
+  const d = curDate();
+  const p = pan(curISO());
+  const nd = nativeDate(p, S.locale === "en" || S.locale === "hi-Latn");
+  const fest = p.festivals && p.festivals.length ? p.festivals[0] : null;
+  const dLeft = daysToExam();
+  const spinReady = !S.spinUsedToday;
+
+  return `
+  <div class="widget">
+    <div class="wcal" onclick="go('calendar')">
+      <div>
+        <div class="wclock">${wakeTime()}</div>
+        <div class="wgreg">${WEEKDAYS[d.getDay()]}, ${d.getDate()} ${
+          d.toLocaleString("en", { month: "short" })} ${d.getFullYear()}</div>
+      </div>
+      <div class="wnative">${nd.line} <span style="font-size:11px;opacity:.75">${nd.year}</span></div>
+      <div class="wpan">${pName("tithi", p.tithi)} · ${pName("nakshatra", p.nakshatra)}${
+        fest ? `<br><span class="wfest">${fest}</span>` : ""}</div>
+    </div>
+    <div class="wstrip" onclick="go('dashboard')">
+      <div>
+        <div class="wlbl">${t("wNextAlarm")}</div>
+        <div class="wval">${wakeTime()}</div>
+      </div>
+      <div>
+        <div class="wlbl">${t("wPot")}</div>
+        <div class="wval" style="color:var(--gold)">${inr(S.pot)}</div>
+      </div>
+      <div>
+        <div class="wlbl">${dLeft !== null ? t("wExam") : t("wStreak")}</div>
+        <div class="wval">${dLeft !== null ? dLeft + "d" : S.streak + "d"}<span
+          class="wdot ${spinReady ? "" : "off"}"></span></div>
+      </div>
+    </div>
+  </div>`;
+}
+
 function examMeta(){ return EXAMS.find(e => e.id === S.exam) || EXAMS[EXAMS.length - 1]; }
 function daysToExam(){
   const e = examMeta();
@@ -270,7 +425,7 @@ function renderLang(){
       ${LOCALES.map(l => `<button class="${S.locale===l?"sel":""}" onclick="setLocale('${l}')">${LOCALE_NAMES[l]}</button>`).join("")}
     </div>
     <div class="dim" style="margin-top:10px">${t("langNote")}</div>
-    <button class="primary wide" onclick="go('exam')">${t("next")}</button>
+    <button class="primary wide" onclick="go('region')">${t("next")}</button>
   </div>`;
 }
 
@@ -368,6 +523,13 @@ function renderDashboard(){
       <button class="wide" onclick="appeal()">${t("appeal")}</button></div>` : ""}
 
   ${S.festival ? `<div class="banner fest"><b>${t("festival")}</b> — ${t("festivalNote")}</div>` : ""}
+
+  <div class="card">
+    <h3>${t("widgetTitle")}</h3>
+    ${widgetHTML()}
+    <div class="whint">${t("widgetHint")}</div>
+    <button class="wide sm ghost" onclick="go('calendar')">${t("openCalendar")}</button>
+  </div>
 
   ${dLeft !== null ? `
   <div class="card">
@@ -508,6 +670,98 @@ function renderDashboard(){
     <div class="dim">${t("sponsoredNote", inr(CAP))}</div>
   </div>`;
 }
+
+/* ---- calendar screen, PRD 16.5 ------------------------------------------ */
+function renderCalendar(){
+  const r = regionMeta();
+  const base = curDate();
+  const y = base.getFullYear(), m = base.getMonth();
+  const first = new Date(y, m, 1);
+  const days = new Date(y, m + 1, 0).getDate();
+  const pad = first.getDay();
+  const selISO = S.calSel || curISO();
+  const latin = S.locale === "en" || S.locale === "hi-Latn";
+
+  let cells = "";
+  for (let i = 0; i < pad; i++) cells += `<div class="calday pad"></div>`;
+  for (let d = 1; d <= days; d++) {
+    const iso = isoOf(new Date(y, m, d));
+    const p = pan(iso);
+    const nd = nativeDate(p, latin);
+    const fest = p.festivals && p.festivals.length;
+    cells += `<div class="calday ${iso === selISO ? "sel" : ""} ${fest ? "fest" : ""}"
+      data-iso="${iso}" onclick="pickDay('${iso}')">
+      <div class="g">${d}</div>
+      <div class="n">${nd.day}</div>
+      ${fest ? `<div class="mark">•</div>` : ""}
+    </div>`;
+  }
+
+  const p = pan(selISO);
+  const nd = nativeDate(p, latin);
+  const per = p.periods;
+
+  return `
+  <div class="calhead">
+    <button class="sm ghost" onclick="go('dashboard')">${t("back")}</button>
+    <b>${first.toLocaleString("en", { month: "long" })} ${y}</b>
+    <span class="pill">${p.place}</span>
+  </div>
+
+  <div class="card">
+    ${widgetHTML()}
+    <div class="whint">${t("widgetHint")}</div>
+  </div>
+
+  <div class="card">
+    <div class="calgrid">
+      ${WEEKDAYS.map(w => `<div class="dow">${w[0]}</div>`).join("")}
+      ${cells}
+    </div>
+    <div class="syslabel">${t("panjikaLabel", r.system)}</div>
+  </div>
+
+  <div class="card">
+    <h3>${t("dayDetail")}</h3>
+    <div class="big" style="font-size:22px;color:var(--gold)">${nd.line} ${nd.year}</div>
+    ${p.festivals && p.festivals.length
+      ? `<div class="banner fest" style="margin-top:10px">${p.festivals.join(" · ")}</div>` : ""}
+    <div style="margin-top:10px">
+      <div class="kv"><span>${t("cTithi")}</span><span>${pName("tithi", p.tithi)} (${
+        localPaksha(p.tithi.paksha, panScript())})</span></div>
+      <div class="kv"><span>${t("cNakshatra")}</span><span>${pName("nakshatra", p.nakshatra)}</span></div>
+      <div class="kv"><span>${t("cYoga")}</span><span>${pName("yoga", p.yoga)}</span></div>
+      <div class="kv"><span>${t("cKarana")}</span><span>${pName("karana", p.karana)}</span></div>
+      <div class="kv"><span>${t("cSunrise")}</span><span>${fmtHM(p.sunrise)}</span></div>
+      <div class="kv"><span>${t("cSunset")}</span><span>${fmtHM(p.sunset)}</span></div>
+      ${per ? `
+      <div class="kv bad"><span>${t("cRahu")}</span><span>${fmtSpan(per.rahuKalam)}</span></div>
+      <div class="kv bad"><span>${t("cYama")}</span><span>${fmtSpan(per.yamagandam)}</span></div>
+      <div class="kv bad"><span>${t("cGulika")}</span><span>${fmtSpan(per.kuligai)}</span></div>
+      <div class="kv good"><span>${t("cGood")}</span><span>${
+        per.nallaNeram.filter(Boolean).map(fmtSpan).join(", ") || "--"}</span></div>` : ""}
+    </div>
+    <div class="syslabel">${t("approxNote")}</div>
+  </div>`;
+}
+window.pickDay = iso => { S.calSel = iso; draw(); };
+
+function renderRegion(){
+  return `
+  <div class="card">
+    <h3>${t("regionTitle")}</h3>
+    <div class="dim">${t("regionNote")}</div>
+    <div class="opts" style="margin-top:12px">
+      ${REGIONS.map(r => `<button onclick="pickRegion('${r.key}')">
+        <b>${PLACES[r.key].name}</b><br>
+        <span class="dim">${r.system}</span></button>`).join("")}
+    </div>
+    <div class="syslabel">${t("regionWhy")}</div>
+  </div>`;
+}
+window.pickRegion = key => {
+  S.region = key; S.calSel = null; S.screen = "exam"; draw();
+};
 
 function leaderboardRows(){
   const all = LB_BASE.map(r => ({ name: r[0], xp: r[1], me: false }))
@@ -695,8 +949,30 @@ function devbar(){
     <button onclick="S.earnedThisCycle=CAP;S.withdrawable=CAP;draw()">Cap</button>
     <button onclick="S.underReview=true;draw()">Flag</button>
     <button onclick="S.festival=!S.festival;draw()">Fest</button>
+    <button onclick="go('calendar')">Cal</button>
+    <button onclick="cycleRegion()">Region</button>
+    <button onclick="shiftDate(1)">+Date</button>
+    <button onclick="shiftDate(-1)">-Date</button>
+    <button onclick="jumpTo('2026-04-15')">Boishakh</button>
+    <button onclick="jumpTo('2027-01-15')">Pongal</button>
     <button onclick="location.reload()">Reset</button>`;
 }
+/* Midnight rollover without waiting for midnight, PRD 16.4. */
+window.shiftDate = n => { S.dayOffset += n; S.calSel = null; draw(); };
+window.jumpTo = iso => {
+  const [y, m, d] = iso.split("-").map(Number);
+  const now = new Date(); now.setHours(12, 0, 0, 0);
+  const target = new Date(y, m - 1, d); target.setHours(12, 0, 0, 0);
+  S.dayOffset = Math.round((target - now) / 86400000);
+  S.calSel = null; S.screen = "calendar"; draw();
+};
+window.cycleRegion = () => {
+  const i = REGIONS.findIndex(r => r.key === S.region);
+  S.region = REGIONS[(i + 1) % REGIONS.length].key;
+  S.calSel = null;
+  toast(PLACES[S.region].name + " — " + regionMeta().system);
+  draw();
+};
 window.cycleLang = () => {
   S.locale = LOCALES[(LOCALES.indexOf(S.locale) + 1) % LOCALES.length];
   toast(t("langLabel") + ": " + LOCALE_NAMES[S.locale]);
@@ -718,8 +994,9 @@ window.nextCycle = () => {
 function draw(){
   $("daypill").textContent = "Day " + S.day;
   $("xppill").textContent = S.xp + " XP";
-  const screens = { lang: renderLang, exam: renderExam, oem: renderOem,
-                    survey: renderSurvey, dashboard: renderDashboard };
+  const screens = { lang: renderLang, region: renderRegion, exam: renderExam,
+                    oem: renderOem, survey: renderSurvey,
+                    calendar: renderCalendar, dashboard: renderDashboard };
   $("app").innerHTML = (screens[S.screen] || renderDashboard)();
   $("devbar").innerHTML = devbar();
   $("sponsorslot").className = S.sponsorId ? "sponsor on" : "sponsor";

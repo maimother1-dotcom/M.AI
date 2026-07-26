@@ -16,8 +16,10 @@ This directory holds the design work — the economics that set the reward ceili
 | `economics/build_model.py` | Rebuilds the workbook from source |
 | `PRD.md` | Full product spec |
 | `prototype/index.html` | Interactive prototype. Open in a browser, no setup. |
-| `prototype/i18n.js` | Every user-facing string, in three locales |
-| `tests/verify_prototype.py` | 97-check browser suite |
+| `prototype/i18n.js` | Every user-facing string, in five locales |
+| `prototype/panchang.js` | Regional calendar engine — tithi, nakshatra, Bengali and Tamil dates |
+| `tests/verify_prototype.py` | 146-check browser suite |
+| `tests/verify_panchang.js` | 38-check astronomy suite, runs in node |
 
 ---
 
@@ -76,9 +78,32 @@ The prototype includes the mitigation: pick your phone, get the literal menu pat
 
 Also specified in PRD §11: offline-first alarms, APK under 15MB, 2GB RAM targets, data-cost transparency on rewarded video, and Indian digit grouping (₹1,00,000 — not ₹100,000).
 
-**Language:** Hinglish default, English and Devanagari Hindi switchable. Hinglish needs no font or keyboard support and is how the target user actually reads. Every string lives in `i18n.js`, so adding Tamil or Bengali later is a data change, not a rebuild.
+**Language:** Hinglish default, with English, Devanagari Hindi, Bengali and Tamil switchable. Hinglish needs no font or keyboard support and is how the target user actually reads. Every string lives in `i18n.js` — five locales, 147 keys each, parity enforced by test.
 
 **The wedge:** students. Waking at 5am to study is a real, already-felt need, so the money is a bonus on top of a reason the user already has — rather than the only reason to install, which is the fight you lose against a free stock alarm.
+
+---
+
+## The regional calendar and the 4×2 widget
+
+A ₹15 cap means engagement cannot be bought with money. So it is bought with something people already open every morning.
+
+Bengali panjika and Tamil daily calendar are checked daily by millions of households. **That habit already exists — the widget does not have to create one, only occupy it.** The calendar is the reason to look; AlarmX state is what they see while looking. No nagging notification required.
+
+It also settles a positioning tension: the panjika audience skews household and older, the exam wedge skews young. One widget carrying both the tithi and the NEET countdown serves both without diluting either.
+
+**What it shows:** clock and Gregorian date · Bengali or Tamil date in native script · tithi, nakshatra and today's festival · next alarm, streak pot, exam countdown. Two tap targets — calendar half and AlarmX half.
+
+**How it is computed:** Swiss Ephemeris in Moshier mode in production, which needs no ephemeris data files and so costs nothing against the 15MB APK budget. 365 days are precomputed into Room on first run and the widget reads cache only, which satisfies offline-first, battery and widget update cost at once. The prototype uses a Meeus implementation in `panchang.js` for the same mechanic without the licence.
+
+**Two rules that are not negotiable:**
+
+- **Nothing is scraped from bengalicalendar.com or tamildailycalendar.com.** Their content is copyrighted, both return HTTP 403 to automated requests, and every value here is computed independently. They are references for which fields to show, never a data source.
+- **The Swiss Ephemeris Professional licence must be bought before distribution.** The AGPL alternative would force all of AlarmX open-source, including the anti-farming gate — self-defeating for a product whose security model assumes the attacker has the source.
+
+**The two traditions genuinely disagree, and the app says which one it is using.** v1 ships drik systems only: Vishuddha Siddhanta for Bengali, Thirukanitham for Tamil. Gupta Press and Vakya are not an offset on those numbers — they need a separate Surya Siddhanta calculator — so they are v2, and the current system is named on screen so a Gupta Press household is not quietly given the wrong dates.
+
+Worth seeing: 14 April 2026 is Puthandu in Chennai but still 30 Choitro in Kolkata. Thai Pongal is 14 January in 2026 and 15 January in 2027, because the sankranti crosses sunset. Both fall out of the engine rather than a lookup table.
 
 ---
 
@@ -92,26 +117,35 @@ No build step, no dependencies, no network. A **DEV** bar at the bottom lets you
 
 Worth doing in this order:
 
-1. **Walk onboarding.** Language → exam → OEM setup → survey. Skip the survey and confirm the app still works fully.
+1. **Walk onboarding.** Language → calendar → exam → OEM setup → survey. Skip the survey and confirm the app still works fully.
 2. **Arm a math alarm, ring it, let the 10 seconds lapse.** The alarm keeps ringing. That is the single most important change in the design.
 3. **Try to withdraw with ₹15 but 0 alarm days.** Blocked — the gate, not the money, is what is missing.
 4. **Hit `7 days`, then withdraw.** ₹10 goes out with a UPI reference. Then watch the minimum become ₹30.
-5. **Press `Lang`** and read the same dashboard in all three languages.
-6. **Flag the account.** Read the review message and use the appeal.
+5. **Press `Lang`** and read the same dashboard in all five languages. In Bengali and Tamil the panchang itself changes script, not just the chrome.
+6. **Press `Cal`, then `Boishakh` and `Pongal`.** The two traditions disagree on which day the year turns, and the app shows that rather than hiding it.
+7. **Flag the account.** Read the review message and use the appeal.
 
 ### Tests
 
 ```bash
 pip install playwright
-python3 tests/verify_prototype.py
+python3 tests/verify_prototype.py     # 146 checks, browser
+node tests/verify_panchang.js         # 38 checks, no dependencies
 ```
 
-97 checks, all passing as of this commit. They cover the payout gate, locale parity across all three languages, Indian number grouping, the alarm reward window, QR validation, and every regression from v0.2.
+**184 checks, all passing as of this commit.**
+
+`verify_prototype.py` covers the payout gate, locale parity across all five languages, Indian number grouping, the alarm reward window, QR validation, the 4x2 widget geometry, the calendar screen, and every regression from v0.2.
+
+`verify_panchang.js` checks the astronomy from first principles rather than against a copied almanac: sun longitude at the 2026 solstices and equinoxes, lunation length, the tithi definition at syzygy, Lahiri ayanamsa, the Mesha sankranti window across four years, and the real festival anchors — Puthandu, Poila Boishakh and Thai Pongal in two different years, which land on different days under the two traditions.
 
 Two honest notes:
 
 - One step (solving math *after* the reward window closes) is driven through the page's own `checkMath()` handler rather than synthetic mouse events. A Playwright actionability quirk in that one long sequence reports the input as not visible, though it is provably visible and fills correctly in isolated repros. Same code path, different event source.
 - The suite needs a Chromium binary. Set `CHROMIUM_PATH` if Playwright's bundled version doesn't match the installed one.
+- The Bengali and Tamil screenshots need Indic fonts on the machine (`fonts-noto-core`, `fonts-indic`). Without them the strings are still correct but paint as boxes.
+
+**The panchang is not release-ready and the tests say so.** What is verified is that the astronomy is internally correct and that the calendar anchors land on the right dates. What is *not* done is the cross-check against a printed Vishuddha Siddhanta panjika and a Tamil daily calendar over 60 dates. Until that is done the Bengali month-start rule is confirmed against one year only. PRD §16.3 treats this as a release blocker, not a warning.
 
 ---
 
@@ -125,7 +159,7 @@ Not covered here: the Android implementation, PSP integration, brand partnership
 
 ## Open questions
 
-Full list in PRD §15. The two that matter most:
+Full list in PRD §17. The two that matter most:
 
 1. **What is the drip survey data actually worth?** Everything above the ad-revenue line rests on a placeholder. One signed indication from a real buyer settles it.
 2. **Is 7 alarm-days the right gate, or is 5 enough?** Too long and genuine users lose the early trust moment the ₹10 exists to create. Tune against real fraud data, not a guess made now.

@@ -48,9 +48,27 @@ Needs a farming gate: Play Integrity, one payout per number and device, and ≥7
 
 **Biggest technical risk: OEM battery killers.** MIUI, ColorOS, Funtouch and One UI kill background apps, and they dominate the target user's devices. An alarm that does not fire on a Redmi is a dead app. Guided per-OEM onboarding with verification afterwards, not assumption.
 
+## v0.4 decisions
+
+**A regional calendar and a 4x2 home-screen widget.** The cap means engagement cannot be bought with money, so it is bought with a habit that already exists: Bengali panjika and Tamil daily calendar are checked every morning by millions of households. The calendar is the reason to look, AlarmX state is what they see while looking. No nagging notification needed.
+
+It also settles the positioning tension. The panjika audience skews household and older, the exam wedge skews young. One widget carrying both the tithi and the NEET countdown serves both.
+
+**Bengali and Tamil become real locales**, taking the string table to five. Not a guess about where installs land — showing a Vishuddha Siddhanta panjika inside English chrome is incoherent. The panchang element names change script too, not just the surrounding copy.
+
+**Computed, never copied.** Swiss Ephemeris in Moshier mode, which needs no data files and so costs nothing against the APK budget. Nothing is scraped from the two reference sites; their content is copyrighted and both block automated requests anyway.
+
+**The commercial licence must be bought before distribution.** AGPL would force the whole app open-source including the anti-farming gate, which defeats a security model that assumes the attacker has the source. One-time capitalised cost, not per-user.
+
+**v1 ships drik only, and says so on screen.** Gupta Press and Vakya are not an offset on drik values, they need a separate Surya Siddhanta calculator. Naming the system in use means a Gupta Press household is not quietly given wrong dates.
+
+**Wrong panchang is worse than no panchang.** People plan fasts and rituals on this. A 60-date cross-check against printed almanacs for Kolkata and Chennai is a release blocker, and it has not been done yet.
+
 ## Status
 
-Economics modelled, PRD at v0.3, prototype built and tested (97/97 checks). Not started: native Android build, PSP integration, brand partnerships, backend fraud service.
+Economics modelled, PRD at v0.4, prototype built and tested — **184 checks passing** (146 browser, 38 astronomy). The engine gets Puthandu, Poila Boishakh and Thai Pongal right across two years, including the sunset rule that moves Pongal from the 14th to the 15th in 2027.
+
+Not started: native Android build, PSP integration, brand partnerships, backend fraud service. Not verified: the 60-date almanac cross-check, and the Bengali month-start rule is matched against one year only.
 
 ## Links
 

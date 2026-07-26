@@ -26,7 +26,11 @@ Recurring every day. Drafts only, Bijoy approves before sending. See [[Notes/Pla
 - [ ] [P2] Legal review of the DPDP consent flow and the Play Store reward-app policy position — due: 9th August 2026
 - [ ] [P1] Test the alarm on a physical Redmi and a physical Realme before anything else ships — OEM battery killers are the biggest technical risk and emulators do not reproduce them — due: 5th August 2026
 - [ ] [P2] Get Hinglish strings read by 3 real students in the segment — tone has to sound like texting, not translated English — due: 7th August 2026
-- [ ] [P3] Scope the native Android build from `apps/alarmx/PRD.md` — due: 12th August 2026
+- [ ] [P1] Cross-check 60 dates of computed panchang against a printed Vishuddha Siddhanta panjika and a Tamil daily calendar, Kolkata and Chennai — release blocker, wrong dates are worse than no dates — due: 16th August 2026
+- [ ] [P1] Buy the Swiss Ephemeris Professional licence from Astrodienst and sign the contract — AGPL would force the whole app open-source including the anti-farming gate — due: 19th August 2026
+- [ ] [P2] Get the Bengali and Tamil strings, and the Tamil 60-year cycle names, read by native speakers — the cycle spellings are unverified — due: 12th August 2026
+- [ ] [P3] Find out whether the median Bengali household follows Vishuddha Siddhanta or Gupta Press — if Gupta Press dominates, the v2 calculator becomes urgent — due: 23rd August 2026
+- [ ] [P3] Scope the native Android build from `apps/alarmx/PRD.md`, including the 4x2 widget — due: 12th August 2026
 
 ### System
 

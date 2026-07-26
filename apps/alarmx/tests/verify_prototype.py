@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AlarmX prototype v0.3 — browser verification.
+"""AlarmX prototype v0.4 — browser verification.
 
 Walks the golden and error paths and asserts the behaviours the PRD depends on.
 Run:  python3 verify_prototype.py
@@ -57,10 +57,14 @@ with sync_playwright() as p:
     pg.wait_for_timeout(400)
 
     # ------------------------------------------------------------ LOCALISATION
-    section("LOCALISATION: Hinglish default, three locales, full key parity")
+    section("LOCALISATION: Hinglish default, five locales, full key parity")
     check("default locale is Hinglish", pg.evaluate("S.locale") == "hi-Latn",
           pg.evaluate("S.locale"))
-    check("three locales offered", pg.evaluate("LOCALES.length") == 3)
+    check("five locales offered", pg.evaluate("LOCALES.length") == 5,
+          str(pg.evaluate("LOCALES")))
+    check("bn and ta are present", pg.evaluate("LOCALES.includes('bn') && LOCALES.includes('ta')"))
+    check("every locale has a display name",
+          pg.evaluate("LOCALES.every(l => !!LOCALE_NAMES[l])"))
     missing = pg.evaluate("""() => {
         const keys = Object.keys(STRINGS['en']); const out = [];
         for (const loc of LOCALES)
@@ -81,6 +85,33 @@ with sync_playwright() as p:
     check("switching to English changes the copy", "Wake up early" in pg.inner_text("#app"))
     pg.evaluate("setLocale('hi')"); pg.wait_for_timeout(120)
     check("switching to Hindi renders Devanagari", "सुबह उठो" in pg.inner_text("#app"))
+    pg.evaluate("setLocale('bn')"); pg.wait_for_timeout(120)
+    check("switching to Bengali renders Bengali script",
+          "ভোরে উঠুন" in pg.inner_text("#app"))
+    pg.evaluate("setLocale('ta')"); pg.wait_for_timeout(120)
+    check("switching to Tamil renders Tamil script",
+          "அதிகாலையில்" in pg.inner_text("#app"))
+
+    # A string can be present in the DOM and still paint as tofu boxes. Measure
+    # the rendered width of a known glyph against a Latin fallback: if the font
+    # is missing the shaping collapses and the widths converge.
+    widths = pg.evaluate("""() => {
+        const mk = (txt, fam) => {
+            const s = document.createElement('span');
+            s.textContent = txt; s.style.cssText =
+              'position:absolute;visibility:hidden;font-size:40px;white-space:nowrap;font-family:' + fam;
+            document.body.appendChild(s);
+            const w = s.getBoundingClientRect().width; s.remove(); return w;
+        };
+        return { bn: mk('ভোরে উঠুন', "'Noto Sans Bengali',sans-serif"),
+                 ta: mk('அதிகாலையில்', "'Noto Sans Tamil',sans-serif"),
+                 tofu: mk('\\uFFFF\\uFFFF\\uFFFF\\uFFFF\\uFFFF', 'sans-serif') };
+    }""")
+    check("Bengali glyphs paint, not tofu", widths["bn"] > 40,
+          f"width {widths['bn']:.0f}px, tofu ref {widths['tofu']:.0f}px")
+    check("Tamil glyphs paint, not tofu", widths["ta"] > 40,
+          f"width {widths['ta']:.0f}px, tofu ref {widths['tofu']:.0f}px")
+
     pg.evaluate("setLocale('hi-Latn')"); pg.wait_for_timeout(120)
 
     # ------------------------------------------------------- NUMBER FORMATTING
@@ -96,8 +127,16 @@ with sync_playwright() as p:
 
     # -------------------------------------------------------------- ONBOARDING
     section("ONBOARDING: language, exam, OEM, optional survey")
-    check("language screen offers all three", pg.locator("#app .langrow button").count() == 3)
+    check("language screen offers all five", pg.locator("#app .langrow button").count() == 5)
     pg.click("#app button.primary"); pg.wait_for_timeout(150)
+    check("language leads into the calendar picker", pg.evaluate("S.screen") == "region",
+          pg.evaluate("S.screen"))
+    check("calendar picker names the panjika system in use",
+          "Vishuddha Siddhanta" in pg.inner_text("#app")
+          and "Thirukanitham" in pg.inner_text("#app"))
+    pg.evaluate("pickRegion('kolkata')"); pg.wait_for_timeout(150)
+    check("picking a region continues to the exam step",
+          pg.evaluate("S.screen") == "exam", pg.evaluate("S.screen"))
     check("exam screen lists real exams", "NEET UG" in pg.inner_text("#app"))
     check("'no exam' escape hatch exists",
           pg.locator("#app button.ghost").count() >= 1)
@@ -315,14 +354,149 @@ with sync_playwright() as p:
     check("alarm-days are NOT reset by a new cycle",
           pg.evaluate("S.alarmDays") > 0, "the gate is lifetime, not per-cycle")
 
+    # ------------------------------------------- WIDGET AND REGIONAL CALENDAR
+    section("WIDGET: 4x2 proportions, two tap targets, midnight rollover (PRD 16.4)")
+    pg.evaluate("S.screen='dashboard';S.dayOffset=0;draw()"); pg.wait_for_timeout(200)
+    check("widget renders on the dashboard", pg.locator(".widget").count() == 1)
+    box = pg.locator(".widget").bounding_box()
+    ratio = box["width"] / box["height"]
+    check("widget holds true 4x2 proportions", abs(ratio - 2.0) < 0.06,
+          f"{box['width']:.0f}x{box['height']:.0f} = {ratio:.2f}:1")
+    check("calendar half is a tap target", pg.locator(".widget .wcal").count() == 1)
+    check("AlarmX half is a separate tap target", pg.locator(".widget .wstrip").count() == 1)
+    wtext = pg.inner_text(".widget")
+    check("widget shows a clock", ":" in wtext)
+    check("widget shows the streak pot", "₹" in wtext)
+    check("widget carries panchang and AlarmX state together",
+          any(x in wtext for x in ("Tithi", "Purnima", "Amavasya", "Pratipada", "Dwitiya",
+                                   "Tritiya", "Chaturthi", "Panchami", "Shashthi", "Saptami",
+                                   "Ashtami", "Navami", "Dashami", "Ekadashi", "Dwadashi",
+                                   "Trayodashi", "Chaturdashi"))
+          and "POT" in wtext.upper(), wtext.replace("\n", " | ")[:120])
+
+    before = pg.inner_text(".widget")
+    pg.click(".devbar button:has-text('+Date')"); pg.wait_for_timeout(250)
+    after = pg.inner_text(".widget")
+    check("midnight rollover changes the widget content", before != after)
+    pg.click(".devbar button:has-text('-Date')"); pg.wait_for_timeout(200)
+
+    check("tapping the calendar half opens the calendar",
+          pg.evaluate("(() => { document.querySelector('.widget .wcal').click(); return S.screen; })()")
+          == "calendar")
+    pg.wait_for_timeout(200)
+
+    section("CALENDAR: month grid, panchang detail, panjika label (PRD 16.2, 16.5)")
+    check("month grid renders a full month",
+          28 <= pg.locator(".calday:not(.pad)").count() <= 31,
+          str(pg.locator(".calday:not(.pad)").count()))
+    check("the panjika system in use is named on screen",
+          "Vishuddha Siddhanta" in pg.inner_text("#app")
+          or "Thirukanitham" in pg.inner_text("#app"))
+    check("unsupported systems are declared, not hidden",
+          "Gupta Press" in pg.inner_text("#app") or "Vakya" in pg.inner_text("#app"))
+    detail = pg.inner_text("#app")
+    for field in ("Tithi", "Nakshatra", "Yoga"):
+        check(f"day detail shows {field}", field in detail)
+    check("day detail shows the inauspicious periods",
+          "Rahu" in detail and "–" in detail)
+    check("prototype accuracy is disclosed, not implied",
+          "Swiss Ephemeris" in detail)
+
+    # Tapping a different day must change the detail pane, not just the highlight.
+    d1 = pg.inner_text("#app .card:last-child")
+    pg.evaluate("pickDay((() => { const c=[...document.querySelectorAll('.calday:not(.pad)')]; "
+                "return c[c.length-1].dataset.iso; })())")
+    pg.wait_for_timeout(250)
+    check("tapping a day loads that day's panchang",
+          pg.inner_text("#app .card:last-child") != d1)
+
+    section("REGIONAL CORRECTNESS: the two traditions do not agree, and must not")
+    kol = pg.evaluate("(() => { const p = panchang('2026-04-14','kolkata'); "
+                      "return p.bengali.day + ' ' + p.bengali.monthLatin + ' ' + p.bengali.year; })()")
+    chn = pg.evaluate("(() => { const p = panchang('2026-04-14','chennai'); "
+                      "return p.tamil.day + ' ' + p.tamil.monthLatin; })()")
+    check("14 Apr 2026 is Puthandu in Chennai (1 Chithirai)", chn == "1 Chithirai", chn)
+    check("14 Apr 2026 is NOT yet Poila Boishakh in Kolkata",
+          kol == "30 Choitro 1432", kol)
+    kol15 = pg.evaluate("(() => { const p = panchang('2026-04-15','kolkata'); "
+                        "return p.bengali.day + ' ' + p.bengali.monthLatin + ' ' + p.bengali.year; })()")
+    check("15 Apr 2026 is Poila Boishakh in Kolkata", kol15 == "1 Boishakh 1433", kol15)
+    check("Pongal 2027 falls on 15 Jan, not 14",
+          pg.evaluate("panchang('2027-01-15','chennai').tamil.day") == 1
+          and pg.evaluate("panchang('2027-01-14','chennai').tamil.day") == 30)
+    check("festivals are derived, and surface on the right day",
+          "Thai Pongal" in pg.evaluate("panchang('2027-01-15','chennai').festivals.join(',')"))
+
+    section("PANCHANG IN NATIVE SCRIPT: element names, not just chrome")
+    # A Bengali panjika printing "Dwadashi" in Latin is not a Bengali panjika.
+    names = pg.evaluate("""() => {
+        const t = tithiAt(toJD(2026,7,26,0)), n = nakshatraAt(toJD(2026,7,26,0));
+        const out = {};
+        for (const s of ['bn','ta']) out[s] = [localName('tithi',t,s), localName('nakshatra',n,s)];
+        out.latin = [t.name, n.name];
+        return out;
+    }""")
+    for s, script_range in (("bn", (0x0980, 0x09FF)), ("ta", (0x0B80, 0x0BFF))):
+        ok = all(any(script_range[0] <= ord(c) <= script_range[1] for c in v)
+                 for v in names[s])
+        check(f"[{s}] tithi and nakshatra render in native script", ok,
+              " / ".join(names[s]))
+    check("every tithi index has a native name in both scripts",
+          pg.evaluate("""() => {
+              for (let i = 1; i <= 30; i++)
+                for (const s of ['bn','ta'])
+                  if (!localName('tithi', {index:i, name:'X'}, s)
+                      || localName('tithi', {index:i, name:'X'}, s) === 'X') return false;
+              return true;
+          }"""))
+    check("every nakshatra, yoga and karana index has a native name",
+          pg.evaluate("""() => {
+              const spans = { nakshatra:27, yoga:27, karana:60 };
+              for (const k in spans)
+                for (let i = 1; i <= spans[k]; i++)
+                  for (const s of ['bn','ta']) {
+                    const v = localName(k, {index:i, name:'X'}, s);
+                    if (!v || v === 'X') return false;
+                  }
+              return true;
+          }"""))
+    check("Bengali uses Bengali numerals, Tamil uses Latin",
+          pg.evaluate("localDigits(1433,'bn')") == "১৪৩৩"
+          and pg.evaluate("localDigits(1433,'ta')") == "1433",
+          pg.evaluate("localDigits(1433,'bn')") + " / " + pg.evaluate("localDigits(1433,'ta')"))
+    check("the Tamil 60-year cycle prints in Tamil script",
+          pg.evaluate("NAMES_LOCAL.ta.years.length") == 60
+          and pg.evaluate("localYearName('Parabhava','ta')") == "பரபாவ"
+          and pg.evaluate("TAMIL_YEARS.every(y => localYearName(y,'ta') !== y)"),
+          pg.evaluate("localYearName('Parabhava','ta')"))
+    check("locales without a name table fall back to Latin, never blank",
+          pg.evaluate("localName('tithi', tithiAt(toJD(2026,7,26,0)), 'hi-Latn')")
+          == pg.evaluate("tithiAt(toJD(2026,7,26,0)).name"))
+
+    pg.evaluate("cycleRegion()"); pg.wait_for_timeout(250)
+    check("switching region switches the tradition shown",
+          pg.evaluate("regionMeta().tradition") == "tamil",
+          pg.evaluate("regionMeta().tradition"))
+    pg.evaluate("setLocale('ta');draw()"); pg.wait_for_timeout(250)
+    pg.screenshot(path=str(SHOT / "10-calendar-tamil.png"), full_page=True)
+    pg.evaluate("S.region='kolkata';S.calSel=null;setLocale('bn');draw()"); pg.wait_for_timeout(250)
+    pg.screenshot(path=str(SHOT / "11-calendar-bengali.png"), full_page=True)
+    pg.evaluate("S.screen='dashboard';draw()"); pg.wait_for_timeout(250)
+    pg.screenshot(path=str(SHOT / "12-widget-bengali.png"), full_page=True)
+    pg.evaluate("setLocale('hi-Latn');draw()"); pg.wait_for_timeout(150)
+
     # --------------------------------------------- FULL-LOCALE RENDER SWEEP
     section("RENDER SWEEP: no missing keys in any locale")
     pg.evaluate("S.withdrawable=12;S.earnedThisCycle=12;draw()")
-    for loc in ("hi-Latn", "en", "hi"):
+    for loc in ("hi-Latn", "en", "hi", "bn", "ta"):
         pg.evaluate(f"setLocale('{loc}')"); pg.wait_for_timeout(200)
         txt = pg.inner_text("#app")
         check(f"[{loc}] dashboard renders with no missing-key markers", "??" not in txt)
         check(f"[{loc}] rupee amounts render", "₹" in txt)
+        pg.evaluate("go('calendar')"); pg.wait_for_timeout(200)
+        cal = pg.inner_text("#app")
+        check(f"[{loc}] calendar renders with no missing-key markers", "??" not in cal)
+        pg.evaluate("go('dashboard')"); pg.wait_for_timeout(150)
     pg.evaluate("setLocale('hi-Latn');draw()"); pg.wait_for_timeout(200)
     pg.screenshot(path=str(SHOT / "08-dashboard-hinglish.png"), full_page=True)
     pg.evaluate("setLocale('en');draw()"); pg.wait_for_timeout(200)

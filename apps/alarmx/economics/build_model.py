@@ -44,11 +44,22 @@ rd.title = "README"
 rd.sheet_view.showGridLines = False
 
 rows = [
-    ("AlarmX — Unit Economics Model (v0.3)", TITLE, None),
+    ("AlarmX — Unit Economics Model (v0.4)", TITLE, None),
     ("", None, None),
     ("What this answers", BOLD, None),
     ("How much cash AlarmX can pay one user per month without losing money.", BLACK, None),
     ("Every other number in the product spec is derived from that one.", BLACK, None),
+    ("", None, None),
+    ("What changed in v0.4 — deliberately, almost nothing", BOLD, None),
+    ("v0.4 adds the regional calendar and the 4x2 home-screen widget (PRD 16).", BLACK, None),
+    ("It pays no cash, so it does not touch the cap. Two accounting notes:", BLACK, None),
+    ("  - Swiss Ephemeris Professional licence: a ONE-TIME CAPITALISED COST, paid", BLACK, None),
+    ("    per project before distribution. It is not a per-user cost and must not be", BLACK, None),
+    ("    amortised into the cap. Get the current fee from Astrodienst before booking it.", BLACK, None),
+    ("  - The widget MAY raise active days per month (Base assumes 26). That would", BLACK, None),
+    ("    raise revenue and therefore the cap. IT IS NOT BAKED IN, AND MUST NOT BE.", BLACK, None),
+    ("    Raising a revenue assumption on the strength of an unshipped feature is how", BLACK, None),
+    ("    the Rs95 design happened. Re-measure after 60 days of live data, then decide.", BLACK, None),
     ("", None, None),
     ("What changed in v0.3", BOLD, None),
     ("The first payout drops from Rs30 to Rs10. That is not free:", BLACK, None),

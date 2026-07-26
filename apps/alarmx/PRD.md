@@ -1,7 +1,9 @@
 # AlarmX — Product Requirements Document
 
-**Version:** 0.3 · **Date:** 26th July 2026 · **Owner:** Bijoy Halder
+**Version:** 0.4 · **Date:** 26th July 2026 · **Owner:** Bijoy Halder
 **Status:** Spec agreed, pre-development
+
+**v0.4 changes:** regional calendar and a 4×2 home-screen widget (§16) — Bengali panjika and Tamil daily calendar, computed from Swiss Ephemeris, with `bn` and `ta` added to the string table. It is the non-cash retention the ₹15 cap forces. Open questions renumbered to §17.
 
 **v0.3 changes:** first payout drops to ₹10 (§6.2), launch cap drops to ₹15 (§2), Hinglish becomes the default language (§12), and the product is positioned for students and exam prep (§13). New India-specific engineering requirements in §11 and a trust section in §14.
 
@@ -405,13 +407,17 @@ Rewarded video burns mobile data, and the target user is often on a metered dail
 
 ## 12. Localisation
 
-Three locales at launch:
+Five locales at launch:
 
 | Locale | Role |
 |---|---|
 | **`hi-Latn` — Hinglish** | **Default.** Roman-script Hindi. |
 | `en` — English | Switchable |
 | `hi` — Devanagari Hindi | Switchable |
+| `bn` — Bengali | Switchable. Added in v0.4 with the panjika (§16). |
+| `ta` — Tamil | Switchable. Added in v0.4 with the daily calendar (§16). |
+
+Bengali and Tamil arrive as a consequence of §16 rather than as a guess about install geography: if the app is showing a Vishuddha Siddhanta panjika, showing it inside English chrome is incoherent.
 
 **Hinglish is the default because it is how the target user actually reads and texts.** It needs no font support and no special keyboard, and it avoids both the downmarket read of formal Devanagari and the exclusion of English-only copy.
 
@@ -457,13 +463,93 @@ Diwali, Holi, Eid, Pongal, and exam-season pushes. **Non-cash only** — themes,
 
 ---
 
-## 15. Open questions
+## 16. Regional calendar and the home-screen widget
+
+The ₹15 cap (§2) means engagement cannot be bought with money. AlarmX needs a daily reason to be opened that has nothing to do with rupees.
+
+Bengali panjika and Tamil daily calendar are checked every morning by millions of households. **That habit already exists — the widget does not have to create one, only occupy it.**
+
+**The mechanic: the calendar is the reason to look, AlarmX state is what they see while looking.** No nagging notification is needed. The reminder is ambient.
+
+It also resolves a positioning tension. The panjika audience skews household and older; the student wedge (§13) skews young. One widget carrying both the tithi and the NEET countdown serves both without diluting either.
+
+### 16.1 Engine
+
+**Swiss Ephemeris in Moshier mode.** Moshier is analytical: it needs **no `.se1` data files**, versus roughly 90MB for full Swiss mode. Accuracy is far beyond what tithi and nakshatra boundaries require, and it keeps the APK inside the 15MB budget in §11.3.
+
+**Precompute, do not compute daily.** On first run, and on any location change, generate 365 days of panchang for the user's coordinates and cache it in Room. Roughly 365 rows × 200 bytes ≈ 75KB. **The widget reads cache only.**
+
+That satisfies three constraints at once: offline-first (§11.2), battery on a budget phone, and widget update cost.
+
+Fields computed: tithi, nakshatra, yoga, karana, sunrise, sunset, Rahu Kalam, Yamagandam, Gulika Kalam, Nalla Neram / Abhijit, the Bengali and Tamil solar date, and the festival list.
+
+### 16.2 Panjika systems are user-selectable and labelled
+
+The competing systems genuinely disagree on dates, and families follow one or the other.
+
+| Tradition | Basis | Version |
+|---|---|---|
+| **Vishuddha Siddhanta** (Bengali) | Drik / observational | **v1** |
+| Gupta Press (Bengali) | Surya Siddhanta mean positions | v2 |
+| **Thirukanitham** (Tamil) | Drik / observational | **v1** |
+| Vakya (Tamil) | Traditional mean positions | v2 |
+
+Scoping honesty: Gupta Press and Vakya are **not an offset** applied to drik values. They need a separate Surya Siddhanta mean-position calculator, which is its own piece of work. v1 ships drik only and **names the system in use on screen**, so a Gupta Press household knows immediately what it is looking at rather than quietly getting the wrong dates.
+
+### 16.3 Validation gate — release blocker
+
+**Wrong panchang is worse than no panchang.** People plan fasts, rituals and auspicious timings on this. It is not a cosmetic bug class.
+
+Before release: cross-check computed output against published almanacs across **60 dates spanning a full year, for Kolkata and Chennai**, comparing tithi and nakshatra names *and* transition times. Encoded as a test fixture with real reference values, not a spot check. Any mismatch is a failure, not a warning.
+
+### 16.4 The widget
+
+**4 cells wide × 2 tall** — the standard wide Android widget.
+
+- `minWidth` 250dp, `minHeight` 110dp; Android 12+ `targetCellWidth=4`, `targetCellHeight=2`
+- `resizeMode="horizontal|vertical"` with 4×1 and 2×2 layouts so it survives being resized
+- **RemoteViews only.** Custom views are not permitted in app widgets.
+- Updates **once at local midnight** via `AlarmManager`, plus on alarm-state change. Never `updatePeriodMillis` — it floors at 30 minutes and wastes battery for no gain when the content changes once a day.
+
+**Layout, left to right:** clock and Gregorian date · Bengali or Tamil date and month in native script · tithi + nakshatra + today's festival · AlarmX strip (next alarm, streak pot, exam countdown, spin-ready dot).
+
+**Two tap targets, two `PendingIntent`s:** the calendar area opens the calendar screen, the AlarmX strip opens the app.
+
+### 16.5 In-app calendar screen
+
+Month grid with festival and tithi marks. Tap a day for the full panchang detail. Reads the same cached table as the widget. Bengali and Tamil month names in native script, rendered with system Noto fonts — bundling font files would blow the APK budget for no gain.
+
+Locales `bn` and `ta` are added to the string table alongside the three in §12, bringing it to five.
+
+### 16.6 No nagging
+
+The widget is ambient and that is the point. One optional daily notification at a user-chosen time, **default off**. Android 13+ requires `POST_NOTIFICATIONS`, that permission is a finite budget, and spending it on marketing is how you lose it for alarms.
+
+### 16.7 Licensing and sourcing — non-negotiable
+
+**Swiss Ephemeris Professional licence must be purchased and the contract signed before distribution.** Astrodienst charge a one-time fee per project. The AGPL alternative would force all of AlarmX open-source, including the anti-farming gate in §6.3 — self-defeating for a product whose security model assumes the attacker has the source (see the security baseline).
+
+**Do not scrape bengalicalendar.com or tamildailycalendar.com.** Their content is copyrighted, redistributing it is infringement, and both already return HTTP 403 to automated requests. They are references for *which fields to show*, never a data source. Every value AlarmX displays is computed independently from ephemeris.
+
+### 16.8 Economics
+
+The widget pays no cash, so it does not touch the ₹15 cap. It is exactly the non-cash retention the cap forces.
+
+It may raise active days per month (base case 26), which would raise revenue and the cap. **That is deliberately not baked into the model.** Raising a revenue assumption on the strength of an unshipped feature is how the ₹95 design happened in the first place. It is recorded as a candidate uplift to re-measure after 60 days of live data. The Swiss Ephemeris licence is a capitalised one-time cost, not a per-user cost.
+
+---
+
+## 17. Open questions
 
 1. **What is the drip survey data actually worth?** Everything above the ad-revenue line rests on this and it is still a placeholder. One signed indication from a real buyer settles it. Highest-value unknown in the model.
 2. Which PSP, and what is their real per-payout rate at AlarmX's expected volume? At a ₹10 first payout the fee is 20–50% of the payout, so the rate matters more than it looks.
 3. Does the smart wake window justify the overnight sensor permission ask, in install-conversion terms?
-4. Which regional language comes fourth, after Hinglish, English and Hindi? Tamil and Bengali are the obvious candidates; the answer should come from where installs actually land, not from a guess made now.
+4. Which panjika system does the median Bengali household actually follow — Vishuddha Siddhanta or Gupta Press? v1 ships drik and labels it (§16.2), but if Gupta Press turns out to dominate, the v2 Surya Siddhanta calculator becomes urgent rather than optional.
 5. Is 7 alarm-days the right anti-farming gate, or is 5 enough? Too long and genuine users lose the early trust moment the ₹10 exists to create. Tune against real fraud data after launch, not before.
 6. What does the exam-countdown ask look like for someone with no exam? The wedge must not make the app unusable for a working adult who installs it anyway.
+
+7. Does the widget actually move active days? It is the whole retention argument for §16 and it is unmeasured. Re-check after 60 days of live data, and only then consider raising the cap ladder.
+
+**Resolved in v0.4:** which regional languages come next (§12 — `bn` and `ta`, pulled in by the panjika rather than guessed from install geography).
 
 **Resolved in v0.3:** the ₹30-minimum vs cap conflict (§6.2 — ₹10 first payout, booked as acquisition), and the launch language question (§12 — Hinglish default).
