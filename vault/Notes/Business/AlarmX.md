@@ -17,12 +17,16 @@ The unit economics model is the spine of this project.
 
 | Per active user / month | Conservative | **Base** | Optimistic |
 |---|---:|---:|---:|
-| Revenue | ₹10.05 | **₹23.42** | ₹57.74 |
-| Sustainable earning cap | ₹1.16 | **₹16.75** | ₹63.18 |
+| Advertising | ₹5.62 | **₹15.91** | ₹43.68 |
+| Survey resale | ₹5.67 | **₹10.25** | ₹20.00 |
+| Total revenue | ₹11.29 | **₹26.16** | ₹63.68 |
+| Sustainable earning cap | ₹2.09 | **₹19.19** | ₹69.98 |
+
+**Ads are 61% of base revenue — the largest source.** That does not make it safe, it moves where the risk sits. Zero the survey line and ads alone give ₹10.08 at base and a *negative* cap in the Conservative column, where ad revenue does not cover the payout fee, servers and support. The load-bearing input stops being a survey price you can negotiate and becomes eCPM and fill rate, which Google sets.
 
 The original concept paid up to **₹95/user/month**. Base case, that loses **₹54.60 per active user per month**. Sensitivity testing shows ₹95 is loss-making at every revenue level tested, including ₹50/user/month.
 
-**Launch cap: ₹15/month**, with a documented ladder for raising it only as measured ARPU proves out. At 100k MAU that clears a 26% margin after acquisition.
+**Launch cap: ₹15/month**, unchanged in v0.5 even though the ceiling rose to ₹19.19. The headroom is banked as margin, not spent. Documented ladder for raising it only as measured ARPU proves out.
 
 The two weakest inputs are the survey resale values. They are placeholders and need validating with a real buyer before anyone counts that revenue.
 
@@ -70,9 +74,19 @@ It also settles the positioning tension. The panjika audience skews household an
 
 The limit of that is worth stating plainly: those references compute no tithi, nakshatra, yoga or karana, and no drik dates. So the printed-panjika cross-check is untouched by it and still blocks release.
 
+## v0.5 decisions
+
+**No ad ever sits between the user and dismissing the alarm.** Hard rule, same standing as "the alarm rings until dismissed". The math problem *is* the dismissal task, so an ad in front of it means the app delays someone switching off a 5am alarm — which reverses the single change that de-risked this concept, and hands a Play reviewer a reward app that blocks an alarm.
+
+What made it decidable was pricing it rather than arguing about it: that ad earns **₹0.73/user/month and moves the cap ₹0.65.** That is the whole value on one side of the scale.
+
+**Interstitials are allowed in four named places** and nowhere else: after dismissal completes, between survey questions, on results and leaderboard screens, on app open when the user did not arrive from an alarm. Every ad surface in the prototype carries a `data-ad-slot` attribute so the rule is a test, not an opinion.
+
+**Rewarded video goes from 3 to 4 per active day.** Rewarded eCPM is $1.50 against $0.40 for interstitial, so an extra rewarded view is worth 3.8x an extra interstitial — and the user opts into it. Base cap ₹16.75 → ₹19.19. The format that respects the user is also the one that pays more.
+
 ## Status
 
-Economics modelled, PRD at v0.4, prototype built and tested — **212 checks passing** (155 browser, 38 astronomy, 19 cross-validation). The engine gets Puthandu, Poila Boishakh and Thai Pongal right across two years, including the sunset rule that moves Pongal from the 14th to the 15th in 2027.
+Economics modelled, PRD at v0.5, prototype built and tested — **230 checks passing** (173 browser, 38 astronomy, 19 cross-validation). The engine gets Puthandu, Poila Boishakh and Thai Pongal right across two years, including the sunset rule that moves Pongal from the 14th to the 15th in 2027.
 
 Not started: native Android build, PSP integration, brand partnerships, backend fraud service. Not verified: the 60-date almanac cross-check, every drik date that is not the new year, every tithi and nakshatra, and the Tamil 60-year cycle spellings.
 

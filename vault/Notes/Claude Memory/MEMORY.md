@@ -28,7 +28,7 @@ Before any build: due diligence and a market survey. This is a hard rule from hi
 ### AlarmX (first product)
 Android alarm app paying users cash for waking on time. Full detail in [[Notes/Business/AlarmX]]; design work in `apps/alarmx/`.
 
-The governing fact: the original ₹95/user/month payout loses ₹54.60 per active user per month against ₹23.42 of revenue. Launch cap is ₹15/month, raised only as measured ARPU proves it. Positioned for exam students, Hinglish by default. Any future feature that pays users has to be checked against `economics/AlarmX-unit-economics.xlsx` before it ships.
+The governing fact: the original ₹95/user/month payout loses ₹54.60 per active user per month against ₹26.16 of revenue. Launch cap is ₹15/month, raised only as measured ARPU proves it. Positioned for exam students, Hinglish by default. Any future feature that pays users has to be checked against `economics/AlarmX-unit-economics.xlsx` before it ships.
 
 Accounting insight worth reusing: the ₹10 first payout is booked as **customer acquisition, not a reward**. It costs ₹13 per converting user against a ₹22 paid install, so it buys a paid retained user for 41% of what an ad buys a raw install. Charging trust-building spend to a reward budget wrongly depresses every later month.
 
@@ -39,6 +39,10 @@ Retention insight worth reusing: **a capped product cannot buy attention with mo
 Two rules encoded there: **never scrape a competitor's copyrighted content** (bengalicalendar.com and tamildailycalendar.com are references for which fields to show, not data sources — everything is computed from ephemeris), and **check the licence before choosing a library** — Swiss Ephemeris under AGPL would have forced the whole app open-source including the anti-farming gate, so the commercial licence is a release blocker.
 
 Domain trap to remember: **Bengali and Tamil solar calendars start their day by different rules**, and getting it wrong shifts every date. Tamil uses a sunset rule, Bengali starts the month the day after the sankranti. First implementation had both wrong; caught only by testing against real festival dates across two years, not one.
+
+Decision principle worth reusing: **when a revenue lever collides with a safety promise, price the lever before arguing about it.** Bijoy proposed an ad before the alarm's math problem. Modelling it showed ₹0.73/user/month, worth ₹0.65 of cap — against delaying someone switching off a 5am alarm and handing Play a reward app that blocks an alarm. The number ended the argument in one line. Also: the better-behaved format was the more profitable one (rewarded eCPM $1.50 vs interstitial $0.40), which is common and worth checking before assuming a user-hostile placement pays.
+
+Related: **"we have several revenue sources" is not the same as diversification.** Ads are 61% of AlarmX base revenue, but zeroing the survey line still produces a negative Conservative cap. More lines did not reduce the risk, they moved it from a price Bijoy can negotiate to an eCPM Google sets.
 
 Standing principle from this feature: **where being wrong is worse than being absent** (dates people plan fasts on, medical or financial figures), verification against an independent published source is a release blocker, and unverified work gets said out loud rather than implied as done.
 

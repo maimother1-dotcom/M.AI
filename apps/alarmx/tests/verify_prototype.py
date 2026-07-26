@@ -354,6 +354,71 @@ with sync_playwright() as p:
     check("alarm-days are NOT reset by a new cycle",
           pg.evaluate("S.alarmDays") > 0, "the gate is lifetime, not per-cycle")
 
+    # -------------------------------------------------------- AD PLACEMENT
+    section("AD PLACEMENT: nothing between the user and dismissing the alarm (PRD 4.6)")
+    # This is the load-bearing check of the whole policy. An ad in the ring
+    # path reverses PRD 3.1 and is a Play suspension risk, and it is worth
+    # ₹0.65 of cap. Asserted structurally so it cannot regress unnoticed.
+    pg.evaluate("S.screen='dashboard';S.alarmArmed=true;S.alarmDoneToday=false;draw()")
+    pg.wait_for_timeout(150)
+    pg.evaluate("startAlarm()"); pg.wait_for_timeout(400)
+    check("alarm is ringing", pg.evaluate("!!S.ringTimer"))
+    check("NO ad slot anywhere inside the ring screen",
+          pg.evaluate("document.querySelectorAll('#ring [data-ad-slot]').length") == 0,
+          str(pg.evaluate("document.querySelectorAll('#ring [data-ad-slot]').length")))
+    check("the sponsor label is present but declared non-blocking",
+          pg.evaluate("!!document.querySelector('#ring #sponsorslot[data-nonblocking]')")
+          and pg.evaluate("!document.querySelector('#ring #sponsorslot').hasAttribute('data-ad-slot')"))
+    check("the dismissal task is interactive while the alarm rings",
+          pg.evaluate("document.querySelectorAll('#task input, #task button').length") > 0,
+          str(pg.evaluate("document.querySelectorAll('#task input, #task button').length")))
+    check("no ad blocks the reward window countdown",
+          "s" in pg.inner_text("#rewardwin"))
+    pg.evaluate("finishAlarm()"); pg.wait_for_timeout(300)
+    check("dismissal succeeded with no ad in the path",
+          pg.evaluate("!S.ringTimer") and pg.evaluate("S.alarmDoneToday") is True)
+
+    section("AD PLACEMENT: the four allowed slots")
+    slots = pg.evaluate("""() => [...document.querySelectorAll('[data-ad-slot]')]
+        .map(e => e.dataset.adWhere + ':' + e.dataset.adSlot)""")
+    check("post-dismissal interstitial renders once the alarm is done",
+          "postDismiss:interstitial" in slots, ", ".join(slots))
+    check("pre-spin slot and the rewarded offer both render",
+          "spin:interstitial" in slots and "offer:rewarded" in slots, ", ".join(slots))
+    check("leaderboard carries a banner, not an interstitial",
+          "results:banner" in slots, ", ".join(slots))
+    check("every ad slot declares a known format",
+          all(s.split(":")[1] in ("interstitial", "banner", "rewarded") for s in slots),
+          ", ".join(slots))
+
+    pg.evaluate("S.screen='survey';S.surveyIdx=4;draw()"); pg.wait_for_timeout(200)
+    check("mid-survey interstitial renders between questions",
+          pg.evaluate("!!document.querySelector('[data-ad-where=survey]')"))
+    pg.evaluate("S.screen='dashboard';draw()"); pg.wait_for_timeout(200)
+
+    section("REWARDED VIDEO: opt-in, capped, priced before the view")
+    check("rewarded load is 4 per active day", pg.evaluate("REWARDED_PER_DAY") == 4,
+          str(pg.evaluate("REWARDED_PER_DAY")))
+    offer = pg.inner_text("[data-ad-where='offer']")
+    check("the reward is stated before the video starts", "₹" in offer, offer.replace("\n", " | ")[:90])
+    before = pg.evaluate("S.rewardedToday")
+    pg.wait_for_timeout(200)
+    check("it never starts on its own", pg.evaluate("S.rewardedToday") == before)
+    pg.click("#rewardedbtn"); pg.wait_for_timeout(250)
+    check("watching one is an explicit click", pg.evaluate("S.rewardedToday") == before + 1)
+    for _ in range(5):
+        btn = pg.query_selector("#rewardedbtn:not([disabled])")
+        if not btn:
+            break
+        btn.click(); pg.wait_for_timeout(150)
+    check("the daily cap holds at 4", pg.evaluate("S.rewardedToday") == 4,
+          str(pg.evaluate("S.rewardedToday")))
+    check("the button disables once the day's videos are used",
+          pg.evaluate("document.getElementById('rewardedbtn').disabled") is True)
+    check("data cost is disclosed on the offer",
+          "MB" in pg.inner_text("[data-ad-where='offer']"))
+    pg.evaluate("S.rewardedToday=0;draw()"); pg.wait_for_timeout(150)
+
     # ------------------------------------------- WIDGET AND REGIONAL CALENDAR
     section("WIDGET: 4x2 proportions, two tap targets, midnight rollover (PRD 16.4)")
     pg.evaluate("S.screen='dashboard';S.dayOffset=0;draw()"); pg.wait_for_timeout(200)

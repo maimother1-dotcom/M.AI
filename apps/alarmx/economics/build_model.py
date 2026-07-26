@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the AlarmX unit-economics workbook (v0.3).
+"""Build the AlarmX unit-economics workbook (v0.5).
 
 v0.3 change: the first payout drops to Rs10 (Rs30 thereafter). That lowers
 breakage, which raises real cash cost, which lowers the sustainable cap. The
@@ -44,11 +44,50 @@ rd.title = "README"
 rd.sheet_view.showGridLines = False
 
 rows = [
-    ("AlarmX — Unit Economics Model (v0.4)", TITLE, None),
+    ("AlarmX — Unit Economics Model (v0.5)", TITLE, None),
     ("", None, None),
     ("What this answers", BOLD, None),
     ("How much cash AlarmX can pay one user per month without losing money.", BLACK, None),
     ("Every other number in the product spec is derived from that one.", BLACK, None),
+    ("", None, None),
+    ("WHERE THE MONEY ACTUALLY COMES FROM", BOLD, None),
+    ("Advertising is the largest source and always was. Per active user per month:", BLACK, None),
+    ("", None, None),
+    ("                        Conservative      Base   Optimistic", BLACK, None),
+    ("  Advertising              {ad_c:>10}{ad_b:>10}{ad_o:>13}", BLACK, None),
+    ("  Survey resale            {sv_c:>10}{sv_b:>10}{sv_o:>13}", BLACK, None),
+    ("  Ads as a share of revenue{sh_c:>10}{sh_b:>10}{sh_o:>13}", BLACK, None),
+    ("", None, None),
+    ("SO WHY DOES THE SURVEY PLACEHOLDER STILL MATTER? Because of this:", BOLD, None),
+    ("With the survey line set to ZERO, ads alone produce these caps:", BLACK, None),
+    ("", None, None),
+    ("  Conservative   ad revenue {ad_c}  vs non-reward cost {nc_c}  ->  cap {ac_c}", BLACK, None),
+    ("  Base           ad revenue {ad_b}                            ->  cap {ac_b}", BLACK, None),
+    ("  Optimistic     ad revenue {ad_o}                            ->  cap {ac_o}", BLACK, None),
+    ("", None, None),
+    ("In the Conservative column ad revenue does not cover the payout fee, servers", BLACK, None),
+    ("and support. You lose money before paying a single reward.", BLACK, None),
+    ("", None, None),
+    ("Leaning on ads does not remove that fragility, it MOVES it. The load-bearing", BLACK, None),
+    ("input stops being a survey price you can negotiate and becomes eCPM and fill", BLACK, None),
+    ("rate, which Google sets and you do not. Both need real measurement.", BLACK, None),
+    ("", None, None),
+    ("What changed in v0.5", BOLD, None),
+    ("Rewarded video goes from 3 to 4 views per active day at Base.", BLACK, None),
+    ("Rewarded eCPM is $1.50 against $0.40 for interstitial, so an extra rewarded", BLACK, None),
+    ("view is worth 3.8x an extra interstitial - and the user opts into it.", BLACK, None),
+    ("  Base cap Rs16.75 -> {cap_b}.", BLACK, None),
+    ("", None, None),
+    ("THE LAUNCH CAP STAYS AT Rs15. The extra headroom is banked as margin, not", BOLD, None),
+    ("spent. Four videos a day is an assumption, not a measurement. Raising the", BLACK, None),
+    ("payout on the strength of an unmeasured assumption is exactly the mistake", BLACK, None),
+    ("that produced the Rs95 design.", BLACK, None),
+    ("", None, None),
+    ("NO AD SITS BETWEEN THE USER AND ALARM DISMISSAL. An interstitial there was", BOLD, None),
+    ("modelled and priced: it earns {int1_rev}/user/month and moves the cap {int1_cap}.", BLACK, None),
+    ("That is the entire value of delaying someone switching off a 5am alarm, and", BLACK, None),
+    ("of handing a Play reviewer a reward app that blocks an alarm. Not taken.", BLACK, None),
+    ("The 4 interstitials above sit in allowed slots only - see PRD 4.6.", BLACK, None),
     ("", None, None),
     ("What changed in v0.4 — deliberately, almost nothing", BOLD, None),
     ("v0.4 adds the regional calendar and the 4x2 home-screen widget (PRD 16).", BLACK, None),
@@ -98,14 +137,6 @@ rows = [
     ("Breakage and share-reaching-first-payout: assumptions, not measured. Revisit after", BLACK, None),
     ("  60 days of live data - they move the cap more than almost anything else.", BLACK, None),
 ]
-for i, (text, font, fill) in enumerate(rows, start=1):
-    c = rd.cell(row=i, column=1, value=text)
-    if font:
-        c.font = font
-    if fill:
-        c.fill = fill
-rd.column_dimensions["A"].width = 100
-
 # ------------------------------------------------------------ ASSUMPTIONS
 a = wb.create_sheet("Assumptions")
 a.sheet_view.showGridLines = False
@@ -126,10 +157,10 @@ DATA = [
 
     (7, "AD REVENUE", None, None, None, None, None, None, True),
     (8, "Rewarded video eCPM", 1.00, 1.50, 2.50, "$ per 1,000", "India Android rewarded ~$1.50; India range $0.50–$2.00", '$#,##0.00', False),
-    (9, "Rewarded videos per active day", 2, 3, 4, "views", "Assumption", NUM, False),
+    (9, "Rewarded videos per active day", 3, 4, 5, "views", "v0.5 — raised from 2/3/4. Opt-in, and worth 3.8x an interstitial", NUM, False),
     (10, "Ad fill rate", 0.70, 0.80, 0.90, "%", "Share of ad requests returning a paying ad in India", PCT, False),
-    (11, "Interstitial eCPM", 0.25, 0.40, 0.70, "$ per 1,000", "Materially below rewarded video", '$#,##0.00', False),
-    (12, "Interstitials per active day", 3, 4, 6, "views", "Assumption", NUM, False),
+    (11, "Interstitial eCPM", 0.25, 0.40, 0.70, "$ per 1,000", "Materially below rewarded video — 27% of it at base", '$#,##0.00', False),
+    (12, "Interstitials per active day", 3, 4, 6, "views", "Allowed slots only — NONE in the alarm dismissal path, PRD 4.6", NUM, False),
     (13, "Banner revenue", 1.00, 2.00, 4.00, "₹/user/month", "Banners earn very little in India", RUP, False),
 
     (14, "SURVEY DATA RESALE", None, None, None, None, None, None, True),
@@ -163,6 +194,60 @@ DATA = [
     (37, "Referral bonus per referred install", 5.00, 5.00, 5.00, "₹", "CAC line, never counted against the reward cap", RUP, False),
     (38, "Paid install cost (CPI) in India", 30.00, 22.00, 15.00, "₹ per install", "Benchmark for judging the first payout as acquisition", RUP, False),
 ]
+
+# --------------------------------------------- README figures, derived from DATA
+# The revenue-source block on the README sheet is computed from the assumptions
+# above rather than typed, so it can never drift out of step with them.
+_A = {label: (cons, base, opt) for _, label, cons, base, opt, *_ in DATA if cons is not None}
+
+
+def _readme_figures():
+    def v(label, i):
+        return _A[label][i]
+
+    out = {}
+    for i, tag in enumerate("cbo"):
+        fx = v("USD / INR exchange rate", i)
+        days, fill = v("Active days per user per month", i), v("Ad fill rate", i)
+        rew = v("Rewarded video eCPM", i) / 1000 * fx * v("Rewarded videos per active day", i) * days * fill
+        one_int = v("Interstitial eCPM", i) / 1000 * fx * days * fill
+        inter = one_int * v("Interstitials per active day", i)
+        ads = rew + inter + v("Banner revenue", i)
+        surveys = v("One-time profile resale value", i) / v("Expected user lifetime", i) \
+            + v("Daily drip batch value", i) * days
+
+        breakage, fraud = v("Breakage at a ₹10 first payout", i), v("Fraud leakage", i)
+        margin = v("Target contribution margin", i)
+        cost = (v("UPI payout fee", i) * (1 - breakage) + v("Infrastructure cost", i)
+                + v("SMS / OTP cost", i) + v("Support cost", i))
+        divisor = (1 - breakage) * (1 + fraud)
+
+        def cap_for(revenue):
+            return (revenue - cost - margin * revenue) / divisor
+
+        out[f"ad_{tag}"] = f"Rs{ads:,.2f}"
+        out[f"sv_{tag}"] = f"Rs{surveys:,.2f}"
+        out[f"sh_{tag}"] = f"{ads / (ads + surveys) * 100:.0f}%"
+        out[f"nc_{tag}"] = f"Rs{cost:,.2f}"
+        ads_only = cap_for(ads)
+        out[f"ac_{tag}"] = "NEGATIVE" if ads_only <= 0 else f"Rs{ads_only:,.2f}"
+        full = cap_for(ads + surveys)
+        out[f"cap_{tag}"] = f"Rs{full:,.2f}"
+        # What one extra interstitial in the dismissal path would have been worth.
+        out[f"int1_rev_{tag}"] = f"Rs{one_int:,.2f}"
+        out[f"int1_cap_{tag}"] = f"Rs{cap_for(ads + surveys + one_int) - full:,.2f}"
+    out["int1_rev"], out["int1_cap"] = out["int1_rev_b"], out["int1_cap_b"]
+    return out
+
+
+FIG = _readme_figures()
+for i, (text, font, fill) in enumerate(rows, start=1):
+    c = rd.cell(row=i, column=1, value=text.format(**FIG) if "{" in text else text)
+    if font:
+        c.font = font
+    if fill:
+        c.fill = fill
+rd.column_dimensions["A"].width = 100
 
 for row, label, cons, base, opt, unit, note, fmt, is_sec in DATA:
     if is_sec:

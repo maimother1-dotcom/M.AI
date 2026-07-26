@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AlarmX — prototype v0.4</title>
+<title>AlarmX — prototype v0.5</title>
 <style>
   :root{
     --bg:#0b1020; --panel:#151b31; --panel2:#1c2440; --line:#2a3459;
@@ -147,6 +147,19 @@
   .kv.bad span:last-child{color:var(--bad)}
   .kv.good span:last-child{color:var(--good)}
   .syslabel{font-size:11px;color:var(--dim);margin-top:8px;line-height:1.5}
+
+  /* ---- ad slots, PRD 4.6 -------------------------------------------------- */
+  /* Every ad surface in the product is one of these, and every one carries
+     data-ad-slot. That is what makes "no ad in the dismissal path" a testable
+     rule instead of an opinion — see verify_prototype.py. */
+  .adslot{border:1px dashed var(--line);border-radius:10px;padding:10px;
+    margin-top:10px;color:var(--dim);font-size:11.5px;line-height:1.5;
+    background:rgba(255,255,255,.02)}
+  .adslot b{display:block;color:var(--dim);font-size:9px;text-transform:uppercase;
+    letter-spacing:.7px;margin-bottom:4px}
+  .adslot.rewarded{border-style:solid;border-color:var(--good);color:#bff2dc}
+  .adslot.rewarded b{color:var(--good)}
+  .adslot .why{display:block;margin-top:5px;opacity:.75;font-size:10.5px}
 </style>
 </head>
 <body>
@@ -159,12 +172,31 @@
     </div>
   </header>
   <main id="app"></main>
+  <!-- ==================================================================
+       THE RING SCREEN CARRIES NO AD SLOT. DO NOT ADD ONE. PRD 4.6.
+
+       No interstitial, no banner, no rewarded video, no spinner waiting on
+       an ad request — nothing between the alarm firing and the user being
+       able to switch it off. PRD 3.1 exists so AlarmX is never the reason
+       somebody misses a shift or an exam; an ad here undoes that section.
+
+       It was modelled, not hand-waved: one interstitial in this path earns
+       Rs0.73/user/month and moves the cap Rs0.65. That is the entire value
+       being weighed against a reward app that blocks an alarm, which is
+       also about the strongest Play enforcement case a reviewer could get.
+
+       #sponsorslot below is NOT an ad slot. It is a brand label on the QR
+       code the user is already scanning (PRD 4.7) — no extra step, no
+       delay, no request to wait on. It deliberately has no data-ad-slot
+       attribute, and verify_prototype.py asserts that #ring contains zero
+       elements carrying one.
+       ================================================================== -->
   <div id="ring">
     <div class="clock" id="ringclock">06:30</div>
     <div class="dim" id="ringsub"></div>
     <div class="window" id="rewardwin"></div>
     <div id="task"></div>
-    <div class="sponsor" id="sponsorslot">Sponsored slot — hidden while sponsor_id is null</div>
+    <div class="sponsor" id="sponsorslot" data-nonblocking="true">Sponsored slot — hidden while sponsor_id is null</div>
   </div>
   <div class="toast" id="toast"></div>
   <div class="devbar" id="devbar"></div>
@@ -176,7 +208,7 @@
 "use strict";
 
 /* ---------------------------------------------------------------------------
-   AlarmX prototype v0.4
+   AlarmX prototype v0.5
    Self-contained: no build step, no network. Open the file directly.
    Implements PRD v0.4 — Rs10 first payout with a 7-day gate, Rs15 cap,
    Hinglish default, student wedge, India-specific onboarding, and the
@@ -195,6 +227,7 @@ const GATE_DAYS = 7;            // PRD 6.3 — anti-farming gate
 const REWARD_WINDOW = 10000;    // PRD 3.1
 const MAX_RING = 300000;        // 5 minutes, PRD 3.1
 const REFERRAL = 5;             // CAC line, never against the cap
+const REWARDED_PER_DAY = 4;     // PRD 4.6 — raised from 3 in v0.5
 
 const SIGNUP_Q = [
   ["age",   ["Under 18","18–24","25–34","35+"]],
@@ -252,6 +285,7 @@ const S = {
   qrCode: "", alarmTask: "math", alarmDifficulty: "normal", alarmArmed: false,
   alarmDoneToday: false, spinUsedToday: false,
   dripIdx: 0, dripDoneToday: false,
+  rewardedToday: 0,
   missionsDone: [], missionsShown: false,
   batch: null, referred: 0,
   underReview: false, sponsorId: null,
@@ -381,6 +415,45 @@ function widgetHTML(){
   </div>`;
 }
 
+/* ---- ad slots, PRD 4.6 --------------------------------------------------- */
+/* The four allowed placements, and nothing else. Every one is tagged
+   data-ad-slot so the placement rule can be asserted structurally rather
+   than reviewed by eye. Nothing here renders inside #ring — see the comment
+   on that element. */
+const AD_SLOTS = {
+  postDismiss: { kind: "interstitial", key: "adPostDismiss" },
+  survey:      { kind: "interstitial", key: "adSurvey" },
+  results:     { kind: "banner",       key: "adResults" },
+  /* Interstitial, not rewarded — PRD 4.6 lists "before the streak or spin
+     reward screen" among the allowed interstitial slots. The rewarded offer
+     below is a separate, opt-in surface. */
+  spin:        { kind: "interstitial", key: "adSpin" },
+};
+function adSlot(name){
+  const s = AD_SLOTS[name];
+  return `<div class="adslot ${s.kind === "rewarded" ? "rewarded" : ""}"
+    data-ad-slot="${s.kind}" data-ad-where="${name}">
+    <b>${t(s.kind === "rewarded" ? "adRewardedLabel" : "adLabel")}</b>
+    ${t(s.key)}</div>`;
+}
+/* Rewarded video is opt-in and states the reward before it starts, PRD 4.6. */
+function rewardedOffer(){
+  const left = REWARDED_PER_DAY - S.rewardedToday;
+  return `<div class="adslot rewarded" data-ad-slot="rewarded" data-ad-where="offer">
+    <b>${t("adRewardedLabel")}</b>
+    ${t("adRewardedOffer", inr(1), left, REWARDED_PER_DAY)}
+    <button class="wide sm" id="rewardedbtn" onclick="watchRewarded()"
+      ${left <= 0 ? "disabled" : ""}>${
+        left > 0 ? t("adRewardedBtn", inr(1)) : t("adRewardedDone")}</button>
+    <span class="why">${t("adDataNote")}</span></div>`;
+}
+window.watchRewarded = () => {
+  if (S.rewardedToday >= REWARDED_PER_DAY) return;
+  S.rewardedToday++;
+  earn(1, "rewarded video");
+  draw();
+};
+
 function examMeta(){ return EXAMS.find(e => e.id === S.exam) || EXAMS[EXAMS.length - 1]; }
 function daysToExam(){
   const e = examMeta();
@@ -483,7 +556,8 @@ function renderSurvey(){
     <div class="q">${SURVEY_LABEL[key] || key}</div>
     <div class="opts">${opts.map(o => `<button onclick="answer()">${o}</button>`).join("")}</div>
     <button class="ghost wide" onclick="skipSurvey()">${t("skipSurvey")}</button>
-  </div>`;
+  </div>
+  ${i === 4 ? adSlot("survey") : ""}`;
 }
 const SURVEY_LABEL = {
   age:"Age group?", gender:"Gender?", city:"Where do you live?", work:"What do you do?",
@@ -535,6 +609,8 @@ function renderDashboard(){
       <button class="wide" onclick="appeal()">${t("appeal")}</button></div>` : ""}
 
   ${S.festival ? `<div class="banner fest"><b>${t("festival")}</b> — ${t("festivalNote")}</div>` : ""}
+
+  ${S.alarmDoneToday ? adSlot("postDismiss") : ""}
 
   <div class="card">
     <h3>${t("widgetTitle")}</h3>
@@ -632,6 +708,8 @@ function renderDashboard(){
     <button class="wide ${S.alarmDoneToday && !S.spinUsedToday?"primary":""}"
       ${S.alarmDoneToday && !S.spinUsedToday?"":"disabled"} onclick="spin()">
       ${S.spinUsedToday ? t("spinDone") : t("spinBtn")}</button>
+    ${adSlot("spin")}
+    ${rewardedOffer()}
   </div>
 
   <div class="card">
@@ -646,6 +724,7 @@ function renderDashboard(){
   <div class="card">
     <h3>${t("leaderboard")}</h3>
     <div class="dim">${t("lbNote", "Kolkata")}</div>
+    ${adSlot("results")}
     <table class="lb" style="margin-top:8px">${leaderboardRows()}</table>
   </div>
 
@@ -994,12 +1073,13 @@ window.cycleLang = () => {
 window.nextDay = () => {
   S.day++; S.alarmDoneToday = false; S.spinUsedToday = false;
   S.dripDoneToday = false; S.missionsDone = []; S.missionsShown = false;
+  S.rewardedToday = 0;
   draw();
 };
 window.nextCycle = () => {
   S.day = 1; S.earnedThisCycle = 0; S.pot = POT_START; S.misses = 0;
   S.alarmDoneToday = false; S.spinUsedToday = false; S.dripDoneToday = false;
-  S.missionsDone = []; S.missionsShown = false;
+  S.missionsDone = []; S.missionsShown = false; S.rewardedToday = 0;
   draw();
 };
 

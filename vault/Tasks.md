@@ -21,7 +21,9 @@ Recurring every day. Drafts only, Bijoy approves before sending. See [[Notes/Pla
 ### AlarmX — see [[Notes/Business/AlarmX]]
 
 - [x] [P1] Decide the first-withdrawal rule — ₹10 first payout then ₹30, booked as acquisition
-- [ ] [P1] Validate survey data resale value with a real buyer — the weakest input in the economics model and the whole revenue case leans on it — due: 2nd August 2026
+- [ ] [P1] Validate survey data resale value with a real buyer — still the weakest input, and with ads alone the Conservative case is loss-making — due: 2nd August 2026
+- [ ] [P1] Open a real AdMob account and confirm actual rewarded eCPM and fill rate for India Android — ads are 61% of revenue and both numbers are published benchmarks, not measurements — due: 9th August 2026
+- [ ] [P2] Measure whether users actually complete 4 rewarded videos a day once the app is live — the v0.5 cap rise rests on it — due: 60 days after launch
 - [ ] [P2] Pick the PSP (RazorpayX vs Cashfree) and confirm the real per-payout rate at expected volume — due: 5th August 2026
 - [ ] [P2] Legal review of the DPDP consent flow and the Play Store reward-app policy position — due: 9th August 2026
 - [ ] [P1] Test the alarm on a physical Redmi and a physical Realme before anything else ships — OEM battery killers are the biggest technical risk and emulators do not reproduce them — due: 5th August 2026

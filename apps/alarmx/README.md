@@ -18,7 +18,7 @@ This directory holds the design work — the economics that set the reward ceili
 | `prototype/index.html` | Interactive prototype. Open in a browser, no setup. |
 | `prototype/i18n.js` | Every user-facing string, in five locales |
 | `prototype/panchang.js` | Regional calendar engine — tithi, nakshatra, three Bengali/Tamil calendar systems |
-| `tests/verify_prototype.py` | 155-check browser suite |
+| `tests/verify_prototype.py` | 173-check browser suite |
 | `tests/verify_panchang.js` | 38-check astronomy suite, runs in node |
 | `tests/verify_bengali_cross.js` | 19-check cross-validation against two independent Bengali calendar implementations |
 | `tests/reference/` | Frozen reference data and its provenance |
@@ -29,14 +29,18 @@ This directory holds the design work — the economics that set the reward ceili
 
 | Per active user / month | Conservative | **Base** | Optimistic |
 |---|---:|---:|---:|
-| Revenue | ₹10.05 | **₹23.42** | ₹57.74 |
-| Sustainable earning cap | ₹1.16 | **₹16.75** | ₹63.18 |
+| Advertising | ₹5.62 | **₹15.91** | ₹43.68 |
+| Survey resale | ₹5.67 | **₹10.25** | ₹20.00 |
+| Total revenue | ₹11.29 | **₹26.16** | ₹63.68 |
+| Sustainable earning cap | ₹2.09 | **₹19.19** | ₹69.98 |
+
+**Advertising is the largest source — 61% of base revenue.** That does not make the model safe, it moves where the risk sits. Zero out the survey line and ads alone give a cap of **₹10.08 at base, and a negative cap in the Conservative column**, where ad revenue (₹5.62) does not cover non-reward costs (₹5.95). The load-bearing input stops being a survey price you can negotiate and becomes eCPM and fill rate, which Google sets. Both still need real measurement.
 
 The original concept paid up to **₹95/user/month**. Base case, that loses **₹54.60 per active user per month**. The sensitivity grid shows ₹95 is loss-making at every revenue level tested, including ₹50/user/month — more than double the base case.
 
-**The launch cap is ₹15/month.** At 100k MAU that clears a 26% contribution margin after acquisition costs.
+**The launch cap is ₹15/month**, unchanged even though the ceiling rose to ₹19.19 in v0.5. The extra headroom is banked as margin, not spent — four rewarded videos a day is an assumption, not a measurement.
 
-**Read the Conservative column before getting comfortable.** At the low end of the published India eCPM range the cap is ₹1.16, not ₹15. That is a realistic first-year outcome for an app with no traffic history, not a pessimism exercise.
+**Read the Conservative column before getting comfortable.** At the low end of the published India eCPM range the cap is ₹2.09, not ₹15. That is a realistic first-year outcome for an app with no traffic history, not a pessimism exercise.
 
 The two least reliable inputs are the survey resale values. They are placeholders, not sourced, and should be validated with a real data buyer before anyone counts that revenue.
 
@@ -80,9 +84,29 @@ The prototype includes the mitigation: pick your phone, get the literal menu pat
 
 Also specified in PRD §11: offline-first alarms, APK under 15MB, 2GB RAM targets, data-cost transparency on rewarded video, and Indian digit grouping (₹1,00,000 — not ₹100,000).
 
-**Language:** Hinglish default, with English, Devanagari Hindi, Bengali and Tamil switchable. Hinglish needs no font or keyboard support and is how the target user actually reads. Every string lives in `i18n.js` — five locales, 147 keys each, parity enforced by test.
+**Language:** Hinglish default, with English, Devanagari Hindi, Bengali and Tamil switchable. Hinglish needs no font or keyboard support and is how the target user actually reads. Every string lives in `i18n.js` — five locales, 159 keys each, parity enforced by test.
 
 **The wedge:** students. Waking at 5am to study is a real, already-felt need, so the money is a bonus on top of a reason the user already has — rather than the only reason to install, which is the fight you lose against a free stock alarm.
+
+---
+
+## Where the ads go, and where they never go
+
+Advertising is the biggest revenue line, so placement is specified rather than left to whoever builds the screen.
+
+**No ad ever sits between the user and dismissing the alarm.** No interstitial, no banner, no rewarded video, not even a spinner waiting on an ad request. The dismissal task is interactive the instant the alarm fires.
+
+That is a hard rule with the same standing as "the alarm rings until dismissed", for three reasons in order of severity:
+
+1. **It would reverse the change that de-risked this product.** The whole point of the reward-window design is that AlarmX is never the reason someone misses a shift or an exam. An unskippable pre-roll in front of a 5am alarm puts that back, and worse, because the user cannot dismiss their way out of it.
+2. **It is a Play suspension risk.** Play's ads policy targets full-screen interstitials that interrupt normal use or interfere with device function. A reward app that blocks an alarm is close to the worst version of that.
+3. **It is worth almost nothing.** Modelled and priced: **₹0.73 per user per month, moving the cap ₹0.65.** That is the entire value being weighed against the first two points.
+
+**Where interstitials do go** — the four per day in the model, and nowhere else: after dismissal completes, between survey questions, on results and leaderboard screens, and on app open when the user did not arrive from an alarm.
+
+**Rewarded video is the primary format**, four per active day, always opt-in with the reward named before the view starts. Rewarded eCPM is $1.50 against $0.40 for interstitial, so an extra rewarded view is worth **3.8× an extra interstitial**. The format that respects the user is also the one that pays more.
+
+Every ad surface in the prototype carries a `data-ad-slot` attribute, which is what makes the rule testable rather than a matter of opinion — `verify_prototype.py` asserts that the ring screen contains zero of them.
 
 ---
 
@@ -133,14 +157,14 @@ Worth doing in this order:
 
 ```bash
 pip install playwright
-python3 tests/verify_prototype.py       # 155 checks, browser
+python3 tests/verify_prototype.py       # 173 checks, browser
 node tests/verify_panchang.js           # 38 checks, no dependencies
 node tests/verify_bengali_cross.js      # 19 checks, no dependencies
 ```
 
-**212 checks, all passing as of this commit.**
+**230 checks, all passing as of this commit.**
 
-`verify_prototype.py` covers the payout gate, locale parity across all five languages, the three Bengali/Tamil calendar systems, Indian number grouping, the alarm reward window, QR validation, the 4x2 widget geometry, the calendar screen, and every regression from v0.2.
+`verify_prototype.py` covers the payout gate, locale parity across all five languages, the three Bengali/Tamil calendar systems, Indian number grouping, the alarm reward window, QR validation, the 4x2 widget geometry, the calendar screen, ad placement, and every regression from v0.2.
 
 `verify_panchang.js` checks the astronomy from first principles rather than against a copied almanac: sun longitude at the 2026 solstices and equinoxes, lunation length, the tithi definition at syzygy, Lahiri ayanamsa, the Mesha sankranti window across four years, and the real festival anchors — Puthandu, Poila Boishakh and Thai Pongal in two different years, which land on different days under the two traditions.
 

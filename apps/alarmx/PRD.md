@@ -1,7 +1,9 @@
 # AlarmX — Product Requirements Document
 
-**Version:** 0.4 · **Date:** 26th July 2026 · **Owner:** Bijoy Halder
+**Version:** 0.5 · **Date:** 26th July 2026 · **Owner:** Bijoy Halder
 **Status:** Spec agreed, pre-development
+
+**v0.5 changes:** ad placement policy (§4.6) — **no ad ever sits between the user and alarm dismissal**, with the allowed interstitial slots named. Rewarded video rises from 3 to 4 views per active day, lifting the base cap to ₹19.19. **The launch cap stays ₹15.** Revenue split now stated explicitly in §2: ads are 61% of base revenue.
 
 **v0.4 changes:** regional calendar and a 4×2 home-screen widget (§16) — Bengali panjika and Tamil daily calendar, computed from Swiss Ephemeris, with `bn` and `ta` added to the string table. It is the non-cash retention the ₹15 cap forces. Open questions renumbered to §17.
 
@@ -32,13 +34,17 @@ Revenue comes from in-app advertising and from reselling aggregated survey data.
 
 | | Conservative | **Base** | Optimistic |
 |---|---:|---:|---:|
-| Total revenue | ₹10.05 | **₹23.42** | ₹57.74 |
+| Advertising revenue | ₹5.62 | **₹15.91** | ₹43.68 |
+| Survey resale revenue | ₹5.67 | **₹10.25** | ₹20.00 |
+| Total revenue | ₹11.29 | **₹26.16** | ₹63.68 |
 | Non-reward costs | ₹5.95 | **₹3.20** | ₹1.75 |
-| **Sustainable earning cap** | **₹1.16** | **₹16.75** | **₹63.18** |
+| **Sustainable earning cap** | **₹2.09** | **₹19.19** | **₹69.98** |
+
+**Advertising is the largest source — 61% of base revenue.** That does not make the model safe, it changes which input is load-bearing. Set the survey line to zero and ads alone give a cap of **₹10.08 at base and a negative cap in the Conservative column**, where ad revenue (₹5.62) does not even cover non-reward costs (₹5.95). The exposure moves from a survey price you can negotiate to eCPM and fill rate, which Google sets. Both still need real measurement.
 
 The original design paid up to ₹95 per user per month (₹60 math + ₹30 streak + ₹5 signup). In the base case that loses **₹54.60 per active user per month**. The sensitivity grid shows the ₹95 row is negative at every revenue level tested, including ₹50/user/month — roughly double the base case.
 
-**Decision: the launch earning cap is ₹15 per user per month.** At 100k MAU that clears a 26% contribution margin after acquisition costs.
+**Decision: the launch earning cap is ₹15 per user per month**, unchanged in v0.5 despite the ceiling rising to ₹19.19. The extra headroom is banked as margin, not spent. Four rewarded videos a day is an assumption, not a measurement, and raising the payout on the strength of an unmeasured assumption is precisely how the ₹95 design happened.
 
 ### Why the cap fell from ₹20 to ₹15
 
@@ -47,7 +53,7 @@ The ₹10 first payout (§6.2) is not free, and the model prices it exactly. A l
 | | v0.2 (₹30 first) | **v0.3 (₹10 first)** |
 |---|---:|---:|
 | Breakage | 40% | **25%** |
-| Sustainable cap | ₹21.65 | **₹16.75** |
+| Sustainable cap | ₹21.65 | **₹16.75** |   <!-- v0.3 figures; v0.5 raises both, the −23% relationship holds -->
 | Cost of the decision | — | **−₹4.90/user/month (−23%)** |
 
 That is the price of the trust position, paid knowingly. §6.2 explains why it is worth it.
@@ -63,7 +69,7 @@ It rises only when measured ARPU rises:
 | 60 days of measured ARPU ≥ ₹40 | ₹30 |
 | First sponsored-QR partner live | Re-model; sponsor revenue is incremental |
 
-**Read the Conservative column before getting comfortable.** At the low end of the published India eCPM range the cap is **₹1.16**, not ₹15. That is not pessimism — it is a realistic first-year outcome for an app with no traffic history. Do not scale spend until the base case is confirmed with real numbers.
+**Read the Conservative column before getting comfortable.** At the low end of the published India eCPM range the cap is **₹2.09**, not ₹15. That is not pessimism — it is a realistic first-year outcome for an app with no traffic history. Do not scale spend until the base case is confirmed with real numbers.
 
 The single most important thing this table says: **do not promise users an earning rate the ad revenue has not yet proven.** Every reward-app failure in this category starts by doing exactly that.
 
@@ -85,6 +91,8 @@ The original design rang the alarm for exactly 10 seconds and then auto-dismisse
 - Dismiss after 10 seconds → alarm still stops, no reward, and it counts as a "miss" against the streak.
 
 The jump-out-of-bed incentive is fully preserved. The risk of AlarmX causing a missed shift is removed.
+
+**This is why §4.6 forbids any ad in the dismissal path.** Nothing may be inserted between the alarm firing and the user being able to switch it off — an ad in that path undoes this section entirely.
 
 ### 3.2 Dismissal tasks
 
@@ -124,7 +132,7 @@ Library of pleasant wake tones. Volume escalation curve configurable. Default re
 
 ### 4.1 Cash is the primary medium
 
-Cash converts installs immediately and AlarmX has no brand equity to trade on. Everything below is denominated in rupees and counts against the ₹20 monthly cap.
+Cash converts installs immediately and AlarmX has no brand equity to trade on. Everything below is denominated in rupees and counts against the ₹15 monthly cap (§2).
 
 ### 4.2 Streak pot — inverted
 
@@ -172,7 +180,40 @@ Paired users. The buddy bonus pays only if **both** dismiss on time.
 
 Same payout as solo, roughly double the retention, and it produces organic invites, which are the cheapest installs available. Pairing is opt-in, with a block/unpair control and no exposure of the buddy's phone number or precise location.
 
-### 4.6 Sponsored QR — rails built, dormant
+### 4.6 Ad placement policy
+
+Advertising is the largest revenue source — **61% of base revenue**, ahead of survey resale. It is also the surface most capable of destroying the product, so where ads may appear is specified here rather than left to whoever builds the screen.
+
+#### No ad ever sits between the user and alarm dismissal
+
+**Hard rule, same standing as "the alarm rings until dismissed" in §3.1.** No interstitial, no banner, no rewarded video, no loading spinner for an ad request, anywhere in the ring → task → dismissed path. The dismissal task must be interactive the instant the alarm fires.
+
+Three reasons, in order of severity:
+
+1. **It reverses the change that de-risked this product.** §3.1 exists so AlarmX is never the reason someone misses a shift or an exam. An unskippable pre-roll in front of a 5am alarm puts that risk straight back, and worse, because the user cannot dismiss their way out of it.
+2. **It is a serious Play enforcement risk.** Play's ads policy targets full-screen interstitials that interrupt normal use or interfere with device function. A reward app that blocks an alarm is close to the worst version of that, and reward apps are already scrutinised. This is a suspension risk, not a warning risk.
+3. **It is worth almost nothing.** Modelled and priced: **₹0.73 per user per month, moving the cap ₹0.65.** That is the entire value being weighed against the two points above.
+
+#### Where interstitials are allowed
+
+The four per active day in the model sit here and nowhere else:
+
+- After dismissal completes, before the streak or spin reward screen
+- Between survey questions
+- On results, history and leaderboard screens
+- On app open, **only** when the user did not arrive from an alarm
+
+#### Rewarded video is the primary format
+
+Four per active day. Always opt-in, with the reward named before the view begins. Never auto-play, never a precondition for something the user has already earned, never the only route to a core function.
+
+Rewarded eCPM is $1.50 against $0.40 for interstitial, so an extra rewarded view is worth **3.8× an extra interstitial**. The format that respects the user is also the one that pays more — pushing interstitial load is both worse product and worse business.
+
+#### Data cost is the user's money
+
+Per §11, rewarded video on a metered connection spends the user's data. Show the approximate size before the view on a mobile connection, and never auto-play video outside Wi-Fi.
+
+### 4.7 Sponsored QR — rails built, dormant
 
 The QR scan is currently a pure cost. It is also the most monetisable surface in the app: a verified human, awake, at home, holding a specific product, at a known time each morning. That is exactly what a CPG brand pays for.
 
