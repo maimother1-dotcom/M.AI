@@ -1,0 +1,22 @@
+# Credentials — never commit real keys. Templates (*.template) are kept.
+*.env
+!*.env.template
+gmail_credentials.json
+gmail_token.json
+token.json
+*credentials*.json
+!*credentials*.json.template
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Vault vector store / logs
+chroma/
+*.log
+
+# Runtime state
+session-locks/
+dashboard/
+.DS_Store

@@ -1,0 +1,114 @@
+{
+  "env": {
+    "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+  },
+  "permissions": {
+    "defaultMode": "bypassPermissions"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /Users/YOUR_USERNAME/.claude/hooks/session-start.py"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/YOUR_USERNAME/.claude/hooks/session-done.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash /Users/YOUR_USERNAME/.claude/hooks/enforce-claude-md.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash /Users/YOUR_USERNAME/.claude/hooks/rule-loader.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash /Users/YOUR_USERNAME/.claude/hooks/correction-capture.sh"
+          },
+          {
+            "type": "command",
+            "command": "python3 /Users/YOUR_USERNAME/.claude/hooks/vault-maintenance.py"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/YOUR_USERNAME/.claude/hooks/chrome-blocker.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__Claude_in_Chrome__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/YOUR_USERNAME/.claude/hooks/chrome-blocker.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/YOUR_USERNAME/.claude/hooks/vault-check.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash /Users/YOUR_USERNAME/.claude/hooks/maintenance-gate.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash /Users/YOUR_USERNAME/.claude/hooks/ntfy-on-long-response.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash /Users/YOUR_USERNAME/.claude/hooks/batch-status-writer.sh"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/YOUR_USERNAME/.claude/hooks/post-compact.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "autoUpdatesChannel": "latest",
+  "skipDangerousModePermissionPrompt": true,
+  "mcpServers": {
+    "vault-search": {
+      "command": "/Users/YOUR_USERNAME/.claude/vault-vector/venv/bin/python",
+      "args": [
+        "/Users/YOUR_USERNAME/.claude/vault-vector/mcp_server.py"
+      ]
+    },
+    "gmail": {
+      "command": "/Users/YOUR_USERNAME/.claude/gmail-mcp/venv/bin/python",
+      "args": [
+        "/Users/YOUR_USERNAME/.claude/gmail-mcp/server.py"
+      ]
+    }
+  }
+}
