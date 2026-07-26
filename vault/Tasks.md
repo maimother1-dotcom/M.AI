@@ -20,10 +20,12 @@ Recurring every day. Drafts only, Bijoy approves before sending. See [[Notes/Pla
 
 ### AlarmX — see [[Notes/Business/AlarmX]]
 
-- [ ] [P1] Decide the first-withdrawal rule: ₹20 cap vs ₹30 minimum means no payout in month 1. Recommendation is a one-off ₹10 first payout — due: 29th July 2026
+- [x] [P1] Decide the first-withdrawal rule — ₹10 first payout then ₹30, booked as acquisition
 - [ ] [P1] Validate survey data resale value with a real buyer — the weakest input in the economics model and the whole revenue case leans on it — due: 2nd August 2026
 - [ ] [P2] Pick the PSP (RazorpayX vs Cashfree) and confirm the real per-payout rate at expected volume — due: 5th August 2026
 - [ ] [P2] Legal review of the DPDP consent flow and the Play Store reward-app policy position — due: 9th August 2026
+- [ ] [P1] Test the alarm on a physical Redmi and a physical Realme before anything else ships — OEM battery killers are the biggest technical risk and emulators do not reproduce them — due: 5th August 2026
+- [ ] [P2] Get Hinglish strings read by 3 real students in the segment — tone has to sound like texting, not translated English — due: 7th August 2026
 - [ ] [P3] Scope the native Android build from `apps/alarmx/PRD.md` — due: 12th August 2026
 
 ### System

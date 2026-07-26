@@ -1,7 +1,9 @@
 # AlarmX — Product Requirements Document
 
-**Version:** 0.2 (revised) · **Date:** 26th July 2026 · **Owner:** Bijoy Halder
+**Version:** 0.3 · **Date:** 26th July 2026 · **Owner:** Bijoy Halder
 **Status:** Spec agreed, pre-development
+
+**v0.3 changes:** first payout drops to ₹10 (§6.2), launch cap drops to ₹15 (§2), Hinglish becomes the default language (§12), and the product is positioned for students and exam prep (§13). New India-specific engineering requirements in §11 and a trust section in §14.
 
 ---
 
@@ -29,21 +31,37 @@ Revenue comes from in-app advertising and from reselling aggregated survey data.
 | | Conservative | **Base** | Optimistic |
 |---|---:|---:|---:|
 | Total revenue | ₹10.05 | **₹23.42** | ₹57.74 |
-| Non-reward costs | ₹5.45 | **₹2.75** | ₹1.45 |
-| **Sustainable earning cap** | **₹1.93** | **₹21.65** | **₹84.90** |
+| Non-reward costs | ₹5.95 | **₹3.20** | ₹1.75 |
+| **Sustainable earning cap** | **₹1.16** | **₹16.75** | **₹63.18** |
 
-The original design paid up to ₹95 per user per month (₹60 math + ₹30 streak + ₹5 signup). In the base case that loses **₹39.18 per active user per month**. At 100k MAU that is a **₹39 lakh monthly loss**. The sensitivity grid shows the ₹95 row is negative at every revenue level tested, including ₹50/user/month — roughly double the base case.
+The original design paid up to ₹95 per user per month (₹60 math + ₹30 streak + ₹5 signup). In the base case that loses **₹54.60 per active user per month**. The sensitivity grid shows the ₹95 row is negative at every revenue level tested, including ₹50/user/month — roughly double the base case.
 
-**Decision: the launch earning cap is ₹20 per user per month**, sitting just under the base-case sustainable figure.
+**Decision: the launch earning cap is ₹15 per user per month.** At 100k MAU that clears a 26% contribution margin after acquisition costs.
 
-This is not a number to be optimistic about. It rises only when measured ARPU rises. The cap is a config value, not a constant in code, and there is a documented ladder:
+### Why the cap fell from ₹20 to ₹15
+
+The ₹10 first payout (§6.2) is not free, and the model prices it exactly. A lower first threshold means fewer users churn without ever cashing out, so **breakage falls from 40% to 25%**. Less breakage means more of what is accrued is genuinely paid, which raises real cash cost:
+
+| | v0.2 (₹30 first) | **v0.3 (₹10 first)** |
+|---|---:|---:|
+| Breakage | 40% | **25%** |
+| Sustainable cap | ₹21.65 | **₹16.75** |
+| Cost of the decision | — | **−₹4.90/user/month (−23%)** |
+
+That is the price of the trust position, paid knowingly. §6.2 explains why it is worth it.
+
+### The cap is a config value, not a constant
+
+It rises only when measured ARPU rises:
 
 | Trigger | New cap |
 |---|---|
-| Launch | ₹20 |
-| 60 days of measured ARPU ≥ ₹30 | ₹25 |
-| 60 days of measured ARPU ≥ ₹40 | ₹35 |
-| First sponsored-QR partner live | Re-model, sponsor revenue is incremental |
+| Launch | ₹15 |
+| 60 days of measured ARPU ≥ ₹30 | ₹20 |
+| 60 days of measured ARPU ≥ ₹40 | ₹30 |
+| First sponsored-QR partner live | Re-model; sponsor revenue is incremental |
+
+**Read the Conservative column before getting comfortable.** At the low end of the published India eCPM range the cap is **₹1.16**, not ₹15. That is not pessimism — it is a realistic first-year outcome for an app with no traffic history. Do not scale spend until the base case is confirmed with real numbers.
 
 The single most important thing this table says: **do not promise users an earning rate the ad revenue has not yet proven.** Every reward-app failure in this category starts by doing exactly that.
 
@@ -216,16 +234,42 @@ That is a Google Play deceptive-behaviour risk, and it is the specific mechanic 
 
 Same cash leaving the business. Completely different trust position — "pays fast, pays real" is a genuine differentiator in a category where nobody believes anybody.
 
-### 6.2 Minimum withdrawal
+### 6.2 Two thresholds: ₹10 first, ₹30 after
 
-₹30 minimum retained. Note the trade-off honestly: at ₹2–5 per UPI payout, a ₹30 withdrawal loses 7–17% to transaction cost. Monthly batch payouts keep this to one payout per user per month.
+| | Threshold | Booked as |
+|---|---:|---|
+| First ever payout | **₹10** | Customer acquisition |
+| Every payout after | ₹30 | Reward cost |
 
-Users below ₹30 at churn constitute **breakage**, modelled at 40% of accrued rewards in the base case. This is a legitimate consequence of a minimum threshold, not a dark pattern, provided the cap is honest and reachable — which at ₹20/month and a ₹30 minimum means roughly six weeks of consistent use. State that plainly in the wallet UI: *"You're ₹12 away from your first withdrawal."*
+**Why the first payout is an acquisition cost, not a reward.** ₹10 plus a ₹3 fee is ₹13 per converting user, or **₹9.10 blended across all installs**. A paid install in India costs around ₹22. So the first payout buys a *paid, retained, trusting* user for **41% of what an ad pays for a raw install that may never open the app twice.*
 
-### 6.3 UI requirements
+That is the correct frame. Charging it to the reward budget would wrongly depress the cap in every subsequent month, for a cost that is structurally marketing.
+
+**Why it was necessary at all.** At a ₹15 cap and a flat ₹30 minimum, a new user cannot be paid inside their first cycle — the first payout would land around six weeks in. Six weeks of "trust me" is exactly what every reward app that never pays also says. The whole honest-cap design in §6.1 depends on the user finding out quickly that the money is real. ₹10 buys that discovery in about two weeks.
+
+### 6.3 Anti-farming gate on the first payout — required, not optional
+
+A ₹10 first payout is a ₹10 bounty on every fake account. **All** of these must pass before the first payout unlocks:
+
+1. Play Integrity verdict passing
+2. One first payout per verified phone number **and** per device fingerprint
+3. **≥7 distinct calendar days with a completed alarm**
+
+Condition 3 is the load-bearing one. It makes farming cost a week of real wall-clock time per ₹10, which destroys the economics of automation, while being invisible to a genuine user who needs about two weeks to reach ₹10 anyway. It cannot be compressed by running an emulator faster, because it is gated on calendar days containing a real alarm event.
+
+Show the gate honestly in the UI, as progress rather than an obstacle: *"4 of 7 days done — first payout unlocks at ₹10."*
+
+### 6.4 Payout mechanics
+
+Monthly batch payouts, one per user per month, keeping transaction cost to a single fee. UPI ID collected with a name-match confirmation before the first payout is released.
+
+Users who churn below their threshold constitute **breakage**, modelled at 25% of accrued rewards in the base case. That is a legitimate consequence of a minimum, not a dark pattern, provided the cap is honest and the threshold is reachable — which at ₹15/month and a ₹10 first threshold it clearly is.
+
+### 6.5 UI requirements
 
 - Wallet shows earned, withdrawable, and remaining monthly cap.
-- When the cap is hit: *"You've earned this month's maximum of ₹20. Your cap resets on 1 August."* Honest, no fake scarcity, no implication that more is coming.
+- When the cap is hit: *"You've earned this month's maximum of ₹15. Your cap resets on 1 August."* Honest, no fake scarcity, no implication that more is coming.
+- Before the first payout, show both gates: the rupee distance **and** the 7-day progress. Whichever is further away is the one that matters.
 - Never display a balance the user cannot eventually withdraw.
 
 ---
@@ -264,6 +308,10 @@ Reward eligibility resets at **local midnight**, not on a rolling 24-hour timer.
 ### 7.5 Tie earning to alarms
 
 Every rupee should trace to a completed alarm event. The detached daily challenge is the soft target for automation; gating the spin behind a morning alarm closes it.
+
+### 7.6 First-payout farming
+
+The ₹10 first payout creates a per-account bounty and needs its own gate — Play Integrity, one payout per phone number and per device, and ≥7 distinct alarm-days. Specified in full in §6.3. This is the single highest-risk fraud surface in the product, because unlike the reward cap it is a one-off prize that resets with every new account.
 
 ---
 
@@ -311,21 +359,111 @@ Minimum SDK 26, target current. The React prototype in `prototype/` is a design 
 | DPDP enforcement on the resale consent | Medium | Optional survey, granular unticked consent, aggregate-only sale, documented retention. Legal review before launch. |
 | Fraud exceeding the 5% modelled leakage | Medium | Play Integrity as a hard gate, alarm-tied earning, shadow throttle, monthly leakage reporting against the model. |
 | Exact-alarm permission restrictions tightening in future Android | Medium | Monitor platform releases. Foreground-service fallback path. |
-| Users churn once they learn the cap is ₹20 | Medium | Honesty is the trade. A ₹20 cap that pays reliably retains better than a ₹95 promise that does not pay. Non-cash rewards carry the rest. |
+| Users churn once they learn the cap is ₹15 | Medium | Honesty is the trade. A ₹15 cap that pays reliably retains better than a ₹95 promise that does not. The student wedge (§13) and non-cash rewards carry the rest — the money was never going to be the whole reason to stay. |
+| **OEM battery killers stop alarms firing** | **High** | The single biggest technical risk. Per-OEM onboarding, post-onboarding verification, re-check on update, physical Redmi and Realme testing before release. See §11.1. |
+| First-payout farming at ₹10 per fake account | High | Play Integrity, one payout per number and device, ≥7 alarm-days. See §6.3. |
+| Hinglish copy reads as inauthentic | Low | Write it how people text, not translated English. Test the strings with real users in the segment before launch. |
 
 ---
 
-## 10. Open questions
+## 11. Building for India
 
-1. What is the actual resale value of the drip survey data? Everything above the ad revenue line depends on this and it is currently a guess.
-2. Which PSP, and what is their real per-payout rate at AlarmX's expected volume?
+This section is not localisation polish. Everything here is a launch blocker.
+
+### 11.1 OEM battery killers are the biggest technical risk in the product
+
+Xiaomi/MIUI, Realme and Oppo/ColorOS, Vivo/Funtouch, and Samsung/OneUI all aggressively kill background apps to protect battery life. These skins dominate the exact devices the target user owns. **An alarm that does not fire on a Redmi is a dead app**, and no amount of reward design compensates for it.
+
+Required:
+
+- Detect `Build.MANUFACTURER` and show the **exact** autostart and battery-unrestricted path for that skin. Generic "please allow background activity" copy is useless — the user needs the literal menu path on their phone.
+- **Verify afterwards rather than assuming.** Schedule a silent test alarm shortly after onboarding and confirm it fired. If it did not, re-prompt.
+- **Re-check on every app update.** OEM skins silently reset these permissions.
+- Request `SCHEDULE_EXACT_ALARM` and battery-optimisation exemption with a plain-language reason, not a bare system dialog.
+
+Treat dontkillmyapp.com as the reference for per-OEM paths, and re-test on a physical Redmi and a physical Realme before any release. Emulators do not reproduce these skins.
+
+### 11.2 Offline-first
+
+The alarm must fire with **zero connectivity**. Rewards accrue locally and sync when a network returns. Network is never in the path of the core promise. A user in a patchy-signal hostel must still be woken.
+
+### 11.3 Low-end devices
+
+Target 2GB RAM. **APK under 15MB.** No heavy animation, no large bundled assets. Every megabyte is a real install-conversion cost on a budget device with full storage.
+
+### 11.4 Data cost is the user's money
+
+Rewarded video burns mobile data, and the target user is often on a metered daily pack. Preload video on wifi where possible, cap daily video count, and be transparent about data used. Silently consuming someone's data to show them ads is how you earn an uninstall in this market.
+
+### 11.5 Formatting
+
+- **Indian digit grouping**: ₹1,00,000 — lakh and crore, not thousands. `##,##,##0`. Getting this wrong instantly signals the app was not built for them.
+- 12-hour clock with AM/PM.
+- Rupee symbol always prefixed, never "Rs." in UI copy.
+
+---
+
+## 12. Localisation
+
+Three locales at launch:
+
+| Locale | Role |
+|---|---|
+| **`hi-Latn` — Hinglish** | **Default.** Roman-script Hindi. |
+| `en` — English | Switchable |
+| `hi` — Devanagari Hindi | Switchable |
+
+**Hinglish is the default because it is how the target user actually reads and texts.** It needs no font support and no special keyboard, and it avoids both the downmarket read of formal Devanagari and the exclusion of English-only copy.
+
+Tone rule: write how people text, not translated English. *"Alarm band karo, ₹15 tak kamao"* — not a formal register nobody uses out loud.
+
+Implementation: **every user-facing string lives in one table.** No hardcoded copy in components. Adding Tamil, Telugu, Bengali or Marathi later then becomes a data change rather than a rebuild. Language switcher on the very first screen and in settings.
+
+---
+
+## 13. The wedge: students and exam prep
+
+AlarmX launches for NEET, JEE, UPSC and board-exam students.
+
+**Why this segment and not "everyone".** Waking at 5am to study is a real, painful, already-felt need. The money becomes a bonus on top of a reason the user already has, rather than the sole reason to install — which is the fight you lose against a free stock alarm. It is also a large, concentrated, highly referral-active group that already shares study apps on WhatsApp.
+
+Features that follow from the wedge:
+
+- **Default alarm times 4:30–6:30am.**
+- **Exam countdown** as a first-class widget — *"NEET in 214 days"*. Costs nothing and reframes every morning as progress toward something the user already cares about.
+- **Study streak** framing rather than a generic wake streak.
+- **Batch challenges** — the wake-up buddy (§4.5) extended to small groups. Study groups already exist on WhatsApp; this rides an existing behaviour instead of inventing one.
+- **Morning missions** after dismissal — revise 5 cards, 10 minutes of reading — for **non-cash** points.
+- **Cohort leaderboards** by exam and by city. Non-cash, strongly motivating, near-zero cost.
+
+**Scope boundary, stated explicitly:** this is a wake-up app with study framing. It is **not** an edtech product. No content library, no question bank, no syllabus tracking. The moment it starts competing with Physics Wallah it loses the thing that makes it work.
+
+---
+
+## 14. Trust
+
+Most Indian reward apps never pay. Users know this, and they arrive assuming AlarmX is the same. **Trust is the moat here, not a feature.**
+
+- **Payout history in-app**, with UPI reference IDs the user can check against their bank.
+- **A public "paid this week" ticker** — real numbers, updated automatically.
+- **Exact timelines everywhere.** No indefinite "processing" state. If something takes 48 hours, say 48 hours.
+- **The ₹10 first payout is the primary trust mechanism.** It exists to be received early and screenshotted. Design the success screen to be worth sharing.
+
+**Referral**: one-tap WhatsApp share, because that is where this segment lives. Referral bonuses are **CAC, never counted against the reward cap** — same accounting logic as §6.2.
+
+### 14.1 Festivals and events
+
+Diwali, Holi, Eid, Pongal, and exam-season pushes. **Non-cash only** — themes, badges, bonus grace tokens, leaderboard events. Zero marginal cost, and it creates a reason to reopen without touching the cap.
+
+---
+
+## 15. Open questions
+
+1. **What is the drip survey data actually worth?** Everything above the ad-revenue line rests on this and it is still a placeholder. One signed indication from a real buyer settles it. Highest-value unknown in the model.
+2. Which PSP, and what is their real per-payout rate at AlarmX's expected volume? At a ₹10 first payout the fee is 20–50% of the payout, so the rate matters more than it looks.
 3. Does the smart wake window justify the overnight sensor permission ask, in install-conversion terms?
-4. Hindi and regional language coverage at launch, or English-only for v1?
-5. **The ₹30 minimum and the ₹20 cap are in direct conflict — decide before build.** At a ₹20 monthly cap, a user cannot reach a ₹30 minimum inside their first cycle. Their first payout lands roughly six weeks in, which flatly contradicts the "pays fast, pays real" position that justifies the honest-cap design in the first place. Surfaced by prototype testing, where the withdraw button is correctly disabled even after a user maxes their month.
+4. Which regional language comes fourth, after Hinglish, English and Hindi? Tamil and Bengali are the obvious candidates; the answer should come from where installs actually land, not from a guess made now.
+5. Is 7 alarm-days the right anti-farming gate, or is 5 enough? Too long and genuine users lose the early trust moment the ₹10 exists to create. Tune against real fraud data after launch, not before.
+6. What does the exam-countdown ask look like for someone with no exam? The wedge must not make the app unusable for a working adult who installs it anyway.
 
-   Three options, none free:
-   - **Drop the minimum to ₹20.** First payout at the end of month 1. But more users reach the threshold, so breakage falls below the modelled 40%, cash cost rises, and the sustainable cap drops. Re-run the model before choosing this.
-   - **Keep ₹30 and say so plainly** — "your first withdrawal unlocks in about 6 weeks" at signup. Honest, but a materially worse hook.
-   - **One-off first payout at ₹10**, then ₹30 thereafter. Buys the early trust moment at a known, bounded cost.
-
-   Recommendation: the third. It is the cheapest way to buy the "it actually paid me" moment, which is what drives retention and word of mouth in this category.
+**Resolved in v0.3:** the ₹30-minimum vs cap conflict (§6.2 — ₹10 first payout, booked as acquisition), and the launch language question (§12 — Hinglish default).

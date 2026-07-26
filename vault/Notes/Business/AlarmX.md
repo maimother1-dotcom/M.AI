@@ -18,11 +18,11 @@ The unit economics model is the spine of this project.
 | Per active user / month | Conservative | **Base** | Optimistic |
 |---|---:|---:|---:|
 | Revenue | ₹10.05 | **₹23.42** | ₹57.74 |
-| Sustainable earning cap | ₹1.93 | **₹21.65** | ₹84.90 |
+| Sustainable earning cap | ₹1.16 | **₹16.75** | ₹63.18 |
 
-The original concept paid up to **₹95/user/month**. Base case, that loses **₹39.18 per active user per month** — roughly **₹39 lakh a month at 100k MAU**. Sensitivity testing shows ₹95 is loss-making at every revenue level tested, including ₹50/user/month.
+The original concept paid up to **₹95/user/month**. Base case, that loses **₹54.60 per active user per month**. Sensitivity testing shows ₹95 is loss-making at every revenue level tested, including ₹50/user/month.
 
-**Launch cap: ₹20/month**, with a documented ladder for raising it only as measured ARPU proves out.
+**Launch cap: ₹15/month**, with a documented ladder for raising it only as measured ARPU proves out. At 100k MAU that clears a 26% margin after acquisition.
 
 The two weakest inputs are the survey resale values. They are placeholders and need validating with a real buyer before anyone counts that revenue.
 
@@ -34,15 +34,23 @@ The two weakest inputs are the survey resale values. They are placeholders and n
 
 Also: the survey became optional and paid, which is what makes the consent valid under the DPDP Act, and now drips 2–3 questions daily instead of walling 30 up front. The drip is worth more — ₹6.50/user/month versus ₹3.75 for the amortised one-time dump.
 
-## Decision needed before build
+## v0.3 decisions
 
-**The ₹30 minimum withdrawal conflicts with the ₹20 cap.** A user cannot reach ₹30 in their first cycle, so the first payout lands about six weeks in, contradicting the "pays fast, pays real" position the whole design rests on. Surfaced by prototype testing.
+**First payout ₹10, then ₹30.** A user cannot reach ₹30 in their first cycle at a ₹15 cap, so the first payout would land six weeks in — and six weeks of "trust me" is what every reward app that never pays also says.
 
-Recommendation: a one-off first payout at ₹10, then ₹30 after. Cheapest way to buy the "it actually paid me" moment.
+It cost real headroom: breakage falls 40% → 25%, so the sustainable cap dropped ₹21.65 → ₹16.75, a 23% cut. Worth it because the first payout is **acquisition, not a reward** — ₹13 per converting user, ₹9.10 blended, which is 41% of a ₹22 paid install. It buys a paid, retained, trusting user for less than half what an ad buys a raw install.
+
+Needs a farming gate: Play Integrity, one payout per number and device, and ≥7 distinct alarm-days. The 7 days is the load-bearing part — it makes farming cost a week of wall-clock time per ₹10.
+
+**Hinglish is the default language.** Roman-script Hindi, with English and Devanagari switchable. No font or keyboard dependency, and it is how the target user actually reads.
+
+**The wedge is students and exam prep.** NEET, JEE, UPSC, boards. Waking at 5am to study is an already-felt need, so the money becomes a bonus rather than the only reason to install.
+
+**Biggest technical risk: OEM battery killers.** MIUI, ColorOS, Funtouch and One UI kill background apps, and they dominate the target user's devices. An alarm that does not fire on a Redmi is a dead app. Guided per-OEM onboarding with verification afterwards, not assumption.
 
 ## Status
 
-Economics modelled, PRD written, prototype built and tested (48/48 checks). Not started: native Android build, PSP integration, brand partnerships, backend fraud service.
+Economics modelled, PRD at v0.3, prototype built and tested (97/97 checks). Not started: native Android build, PSP integration, brand partnerships, backend fraud service.
 
 ## Links
 

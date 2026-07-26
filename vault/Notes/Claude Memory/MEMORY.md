@@ -28,7 +28,9 @@ Before any build: due diligence and a market survey. This is a hard rule from hi
 ### AlarmX (first product)
 Android alarm app paying users cash for waking on time. Full detail in [[Notes/Business/AlarmX]]; design work in `apps/alarmx/`.
 
-The governing fact: the original ₹95/user/month payout loses ₹39.18 per active user per month against ₹23.42 of revenue. Launch cap is ₹20/month, raised only as measured ARPU proves it. Any future feature that pays users has to be checked against `economics/AlarmX-unit-economics.xlsx` before it ships.
+The governing fact: the original ₹95/user/month payout loses ₹54.60 per active user per month against ₹23.42 of revenue. Launch cap is ₹15/month, raised only as measured ARPU proves it. Positioned for exam students, Hinglish by default. Any future feature that pays users has to be checked against `economics/AlarmX-unit-economics.xlsx` before it ships.
+
+Accounting insight worth reusing: the ₹10 first payout is booked as **customer acquisition, not a reward**. It costs ₹13 per converting user against a ₹22 paid install, so it buys a paid retained user for 41% of what an ad buys a raw install. Charging trust-building spend to a reward budget wrongly depresses every later month.
 
 Three design flaws were caught and fixed before build: a 10-second alarm that auto-dismissed (now the alarm rings until dismissed and 10s is only the reward window), a withdrawal bottleneck that was a Play Store removal risk (now cap earning, pay out in full), and a fake "technical difficulty" message for flagged accounts (now an honest under-review state with appeals).
 

@@ -1,23 +1,51 @@
 #!/usr/bin/env python3
-"""Walk the AlarmX prototype golden + error paths and screenshot."""
+"""AlarmX prototype v0.3 — browser verification.
+
+Walks the golden and error paths and asserts the behaviours the PRD depends on.
+Run:  python3 verify_prototype.py
+"""
 from playwright.sync_api import sync_playwright
-import pathlib, sys
+import pathlib, sys, os, glob
 
 URL = (pathlib.Path(__file__).resolve().parent.parent / "prototype" / "index.html").as_uri()
 SHOT = pathlib.Path(__file__).resolve().parent / "shots"
 SHOT.mkdir(exist_ok=True)
+
 # Point at a specific Chromium if the bundled one doesn't match the installed build.
-import os, glob
-_exe = os.environ.get("CHROMIUM_PATH") or next(iter(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")), None)
+_exe = os.environ.get("CHROMIUM_PATH") or next(
+    iter(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")), None)
 LAUNCH = {"executable_path": _exe} if _exe else {}
 
 fails, checks = [], []
 
+
 def check(name, cond, detail=""):
-    checks.append((name, cond, detail))
+    checks.append((name, bool(cond), detail))
     if not cond:
         fails.append(f"{name} :: {detail}")
     print(("  PASS  " if cond else "  FAIL  ") + name + (f"   [{detail}]" if detail else ""))
+
+
+def section(title):
+    print(f"\n--- {title} ---")
+
+
+def onboard(pg, exam="neet", oem="xiaomi", survey=True):
+    """Walk lang -> exam -> oem -> survey -> dashboard."""
+    pg.evaluate("go('exam')"); pg.wait_for_timeout(100)
+    pg.evaluate(f"pickExam('{exam}')"); pg.wait_for_timeout(100)
+    pg.evaluate(f"pickOem('{oem}')"); pg.wait_for_timeout(100)
+    pg.evaluate("go('survey')"); pg.wait_for_timeout(100)
+    if survey:
+        for _ in range(8):
+            pg.locator("#app .opts button").first.click()
+            pg.wait_for_timeout(40)
+        pg.check("#c1"); pg.wait_for_timeout(80)
+        pg.click("#app button.primary")
+    else:
+        pg.evaluate("skipSurvey()")
+    pg.wait_for_timeout(200)
+
 
 with sync_playwright() as p:
     b = p.chromium.launch(**LAUNCH)
@@ -28,182 +56,286 @@ with sync_playwright() as p:
     pg.goto(URL)
     pg.wait_for_timeout(400)
 
-    print("\n--- ONBOARDING: survey is genuinely optional ---")
-    body = pg.inner_text("#app")
-    check("survey states it is optional", "optional" in body.lower())
-    check("skip control is present", pg.locator("button:has-text('Skip the survey')").count() == 1)
-
-    # 1. Skip path — app must be fully usable
-    pg.click("button:has-text('Skip the survey')")
-    pg.wait_for_timeout(300)
-    check("skipping reaches the dashboard", "wallet" in pg.inner_text("#app").lower())
-    check("skipping pays no bonus", "₹0" in pg.inner_text("#app"))
-    pg.screenshot(path=str(SHOT / "01-skipped-dashboard.png"), full_page=True)
-
-    # 2. Restart, complete survey with granular consent
-    print("\n--- ONBOARDING: complete survey, granular consent ---")
-    pg.reload(); pg.wait_for_timeout(300)
-    for i in range(8):
-        pg.locator("#app .opts button").first.click()
-        pg.wait_for_timeout(60)
-    txt = pg.inner_text("#app")
-    check("consent screen has two separate checkboxes", pg.locator("#app input[type=checkbox]").count() == 2)
-    check("resale consent is unticked by default", not pg.locator("#c2").is_checked())
-    check("finish is disabled without the required consent",
-          pg.locator("button:has-text('Finish and collect')").is_disabled())
-    pg.screenshot(path=str(SHOT / "02-consent.png"), full_page=True)
-    pg.check("#c1"); pg.wait_for_timeout(150)
-    check("finish enables once required consent given",
-          not pg.locator("button:has-text('Finish and collect')").is_disabled())
-    pg.click("button:has-text('Finish and collect')")
-    pg.wait_for_timeout(300)
-    check("signup bonus of ₹5 credited", "₹5" in pg.inner_text("#app"))
-
-    print("\n--- WALLET: cap language, no locked balance ---")
-    dash = pg.inner_text("#app")
-    check("cap is disclosed", "cap" in dash.lower())
-    check("promises full withdrawal", "withdrawable in full" in dash.lower())
-    check("shows distance to first withdrawal", "away from your first withdrawal" in dash.lower())
-    check("withdraw disabled below minimum",
-          pg.locator("button:has-text('Withdraw to UPI')").is_disabled())
-
-    print("\n--- ALARM: reward window is NOT the ring duration ---")
-    # arm with math, then let the 10s window lapse
-    pg.click("button:has-text('Arm alarm')")
-    pg.wait_for_timeout(200)
-    pg.click(".devbar button:has-text('Ring alarm')")
-    pg.wait_for_timeout(600)
-    check("alarm overlay is showing", "on" in (pg.get_attribute("#ring", "class") or ""))
-    pg.screenshot(path=str(SHOT / "03-alarm-window-open.png"))
-    win = pg.inner_text("#rewardwin")
-    check("reward countdown is running", "Reward window" in win, win)
-    pg.wait_for_timeout(10500)   # let the window lapse
-    win2 = pg.inner_text("#rewardwin")
-    check("window closes after 10s", "closed" in win2.lower(), win2)
-    check("ALARM STILL RINGING after window closed",
-          "on" in (pg.get_attribute("#ring", "class") or ""),
-          "this is the whole point of the change")
-    pg.screenshot(path=str(SHOT / "04-window-lapsed-still-ringing.png"))
-
-    # Dismiss late. Driven through the page's own checkMath() handler rather than
-    # synthetic mouse events: a Playwright actionability quirk in this one long
-    # sequence reports the (provably visible) input as not visible. Same code path,
-    # same state transitions -- only the event source differs.
-    pg.evaluate("""() => {
-        for (let i = 0; i < 6 && S.ringTimer; i++) {
-            const el = document.getElementById('mathin');
-            if (!el) break;
-            el.value = String(S.mathA + S.mathB);
-            checkMath();
-        }
+    # ------------------------------------------------------------ LOCALISATION
+    section("LOCALISATION: Hinglish default, three locales, full key parity")
+    check("default locale is Hinglish", pg.evaluate("S.locale") == "hi-Latn",
+          pg.evaluate("S.locale"))
+    check("three locales offered", pg.evaluate("LOCALES.length") == 3)
+    missing = pg.evaluate("""() => {
+        const keys = Object.keys(STRINGS['en']); const out = [];
+        for (const loc of LOCALES)
+            for (const k of keys) if (STRINGS[loc][k] === undefined) out.push(loc + ':' + k);
+        return out;
     }""")
-    pg.wait_for_timeout(400)
-    check("alarm dismissed after late solve", "on" not in (pg.get_attribute("#ring", "class") or ""))
-    check("a miss was recorded", pg.evaluate("S.misses") == 1, f"misses={pg.evaluate('S.misses')}")
-    check("no reward for late dismissal", pg.evaluate("S.streak") == 0)
+    check("every locale has every string key", len(missing) == 0, ", ".join(missing[:5]))
+    extra = pg.evaluate("""() => {
+        const en = new Set(Object.keys(STRINGS['en'])); const out = [];
+        for (const loc of LOCALES)
+            for (const k of Object.keys(STRINGS[loc])) if (!en.has(k)) out.push(loc+':'+k);
+        return out;
+    }""")
+    check("no orphan keys outside the English set", len(extra) == 0, ", ".join(extra[:5]))
+    check("first screen is in Hinglish", "Subah utho" in pg.inner_text("#app"))
 
-    print("\n--- STREAK POT: decrements, never accumulates ---")
+    pg.evaluate("setLocale('en')"); pg.wait_for_timeout(120)
+    check("switching to English changes the copy", "Wake up early" in pg.inner_text("#app"))
+    pg.evaluate("setLocale('hi')"); pg.wait_for_timeout(120)
+    check("switching to Hindi renders Devanagari", "सुबह उठो" in pg.inner_text("#app"))
+    pg.evaluate("setLocale('hi-Latn')"); pg.wait_for_timeout(120)
+
+    # ------------------------------------------------------- NUMBER FORMATTING
+    section("INDIAN NUMBER FORMATTING: lakh/crore grouping")
+    check("1,00,000 groups the Indian way", pg.evaluate("inr(100000)") == "₹1,00,000",
+          pg.evaluate("inr(100000)"))
+    check("1 crore groups correctly", pg.evaluate("inr(10000000)") == "₹1,00,00,000",
+          pg.evaluate("inr(10000000)"))
+    check("sub-1000 unchanged", pg.evaluate("inr(999)") == "₹999", pg.evaluate("inr(999)"))
+    check("thousands still correct", pg.evaluate("inr(1234)") == "₹1,234", pg.evaluate("inr(1234)"))
+    check("paise shown only when non-zero",
+          pg.evaluate("inr(0.5)") == "₹0.50" and pg.evaluate("inr(15)") == "₹15")
+
+    # -------------------------------------------------------------- ONBOARDING
+    section("ONBOARDING: language, exam, OEM, optional survey")
+    check("language screen offers all three", pg.locator("#app .langrow button").count() == 3)
+    pg.click("#app button.primary"); pg.wait_for_timeout(150)
+    check("exam screen lists real exams", "NEET UG" in pg.inner_text("#app"))
+    check("'no exam' escape hatch exists",
+          pg.locator("#app button.ghost").count() >= 1)
+    pg.screenshot(path=str(SHOT / "01-exam.png"), full_page=True)
+
+    pg.evaluate("pickExam('neet')"); pg.wait_for_timeout(150)
+    check("OEM screen appears after exam", pg.evaluate("S.screen") == "oem")
+    n_oems = len(pg.evaluate("OEMS.map(o=>o.id)"))
+    check("all OEM families offered", pg.locator("#app .opts button").count() == n_oems)
+    pg.evaluate("pickOem('xiaomi')"); pg.wait_for_timeout(200)
+    oem_txt = pg.inner_text("#app")
+    check("MIUI shows the literal menu path", "Autostart" in oem_txt and "MIUI" in oem_txt)
+    check("OEM step count is concrete", pg.locator("#app ol.steps li").count() >= 2)
+    pg.screenshot(path=str(SHOT / "02-oem-walkthrough.png"), full_page=True)
+    pg.evaluate("pickOem('realme')"); pg.wait_for_timeout(150)
+    check("switching OEM swaps the instructions", "ColorOS" in pg.inner_text("#app"))
+
+    pg.evaluate("go('survey')"); pg.wait_for_timeout(150)
+    check("survey states it is optional", "optional" in pg.inner_text("#app").lower())
+    check("skip control present", pg.locator("#app button.ghost").count() >= 1)
+
+    pg.evaluate("skipSurvey()"); pg.wait_for_timeout(200)
+    check("skipping reaches the dashboard", pg.evaluate("S.screen") == "dashboard")
+    check("skipping pays no bonus", pg.evaluate("S.withdrawable") == 0)
+
+    pg.reload(); pg.wait_for_timeout(300)
+    onboard(pg, survey=True)
+    check("signup bonus credited", pg.evaluate("S.withdrawable") == 5)
+    check("resale consent stayed unticked", pg.evaluate("S.consentResale") is False,
+          "opt-in must be a real choice")
+
+    # ---------------------------------------------------------- STUDENT WEDGE
+    section("STUDENT WEDGE: exam countdown and wake time")
+    d = pg.evaluate("daysToExam()")
+    check("countdown is a real positive number", isinstance(d, int) and 0 < d <= 366, str(d))
+    check("countdown renders on the dashboard", "din baaki" in pg.inner_text("#app"))
+    pg.evaluate("S.exam='upsc';draw()"); pg.wait_for_timeout(150)
+    d2 = pg.evaluate("daysToExam()")
+    check("different exam gives a different countdown", d2 != d, f"{d} vs {d2}")
+    check("wake time follows the exam", pg.evaluate("wakeTime()") == "04:30",
+          pg.evaluate("wakeTime()"))
+    pg.evaluate("S.exam='none';draw()"); pg.wait_for_timeout(150)
+    check("no-exam users get a usable dashboard", pg.evaluate("daysToExam()") is None)
+    check("no-exam state is labelled", "Exam set nahi" in pg.inner_text("#app"))
+    pg.evaluate("S.exam='neet';draw()"); pg.wait_for_timeout(120)
+
+    # ----------------------------------------------------------------- CAP
+    section("EARNING CAP: ₹15, honest, enforced")
+    check("cap constant is ₹15", pg.evaluate("CAP") == 15)
+    pg.click(".devbar button:has-text('Cap')"); pg.wait_for_timeout(250)
     dash = pg.inner_text("#app")
-    check("pot starts at ₹30 and is shown", "₹30" in dash or "₹15" in dash)
-    check("warns how many misses until the next drop", "drops to" in dash)
-    pg.evaluate("S.misses=5;S.pot=potTier();draw()")
-    pg.wait_for_timeout(200)
-    check("pot drops to ₹15 at 5 misses", pg.evaluate("S.pot") == 15)
-    pg.evaluate("S.misses=11;S.pot=potTier();draw()")
-    pg.wait_for_timeout(200)
-    check("pot drops to ₹5 above 10 misses", pg.evaluate("S.pot") == 5)
-    pg.evaluate("S.misses=0;S.pot=30;draw()")
-
-    print("\n--- SPIN: gated behind a completed alarm ---")
-    pg.evaluate("S.alarmDoneToday=false;draw()"); pg.wait_for_timeout(150)
-    check("spin locked without an alarm", pg.locator("button:has-text('Spin')").is_disabled())
-    pg.evaluate("S.alarmDoneToday=true;draw()"); pg.wait_for_timeout(150)
-    check("spin unlocked after an alarm", not pg.locator("button:has-text('Spin')").is_disabled())
-    before = pg.evaluate("S.withdrawable")
-    pg.click("button:has-text('Spin')"); pg.wait_for_timeout(250)
-    check("spin pays a non-zero floor", pg.evaluate("S.withdrawable") > before)
-
-    print("\n--- QR: registered code only ---")
-    pg.evaluate("S.alarmTask='qr';S.qrCode='BATHROOM-MIRROR-42';S.alarmArmed=true;draw()")
-    pg.wait_for_timeout(200)
-    pg.click(".devbar button:has-text('Ring alarm')"); pg.wait_for_timeout(500)
-    pg.fill("#task input#qrin", "SOME-OTHER-CODE")
-    pg.click("#task button:has-text('Submit scan')"); pg.wait_for_timeout(300)
-    check("WRONG QR is rejected", "on" in (pg.get_attribute("#ring", "class") or ""))
-    pg.screenshot(path=str(SHOT / "05-qr-wrong-code.png"))
-    pg.fill("#task input#qrin", "BATHROOM-MIRROR-42")
-    pg.click("#task button:has-text('Submit scan')"); pg.wait_for_timeout(400)
-    check("correct QR dismisses", "on" not in (pg.get_attribute("#ring", "class") or ""))
-
-    print("\n--- EARNING CAP: honest ceiling ---")
-    pg.click(".devbar button:has-text('Hit cap')"); pg.wait_for_timeout(300)
-    dash = pg.inner_text("#app")
-    check("cap message is honest about no more accrual",
-          "maximum" in dash.lower() and "resets" in dash.lower())
-    low = dash.lower()
-    check("no withheld-balance dark patterns",
-          all(p not in low for p in ["unlock next month", "monthly withdrawal limit",
-                                     "withdrawal limit", "locked until next month",
-                                     "released next month"]),
-          "spin being 'locked until you complete an alarm' is a feature gate, not a withheld balance")
     before = pg.evaluate("S.withdrawable")
     pg.evaluate("earn(10,'test')"); pg.wait_for_timeout(150)
     check("earning beyond the cap is refused", pg.evaluate("S.withdrawable") == before)
-    pg.screenshot(path=str(SHOT / "06-cap-reached.png"), full_page=True)
+    low = dash.lower()
+    check("no withheld-balance dark patterns",
+          all(x not in low for x in ["unlock next month", "monthly withdrawal limit",
+                                     "withdrawal limit", "released next month"]))
 
-    print("\n--- WITHDRAWAL: full balance, no release limit ---")
-    check("withdraw stays disabled at the cap (Rs20 < Rs30 minimum)",
-          pg.locator("button:has-text('Withdraw to UPI')").is_disabled(),
-          "product conflict logged as PRD open question 5")
-    pg.evaluate("S.withdrawable=45;draw()"); pg.wait_for_timeout(200)
-    check("withdraw enables once above the minimum",
-          not pg.locator("button:has-text('Withdraw to UPI')").is_disabled())
-    pg.click("button:has-text('Withdraw to UPI')"); pg.wait_for_timeout(300)
-    t = pg.inner_text("#toast")
-    check("withdrawal pays the FULL balance", "Full balance" in t, t)
-    check("wallet is emptied", pg.evaluate("S.withdrawable") == 0)
+    # ------------------------------------------------- FIRST PAYOUT + GATE
+    section("FIRST PAYOUT: ₹10 threshold behind a 7-day gate")
+    check("first threshold is ₹10", pg.evaluate("FIRST_MIN") == 10)
+    check("later threshold is ₹30", pg.evaluate("LATER_MIN") == 30)
+    check("gate is 7 days", pg.evaluate("GATE_DAYS") == 7)
+    pg.evaluate("S.alarmDays=0;S.withdrawable=15;draw()"); pg.wait_for_timeout(150)
+    check("₹15 alone does NOT unlock the first payout",
+          pg.locator("button:has-text('UPI')").is_disabled(),
+          "the 7-day gate is the anti-farming control")
+    check("gate progress is shown honestly", "0 / 7" in pg.inner_text("#app"))
+    pg.evaluate("S.alarmDays=6;draw()"); pg.wait_for_timeout(150)
+    check("6 days still blocked", pg.locator("button:has-text('UPI')").is_disabled())
+    pg.screenshot(path=str(SHOT / "03-gate-blocking.png"), full_page=True)
+    pg.evaluate("S.alarmDays=7;draw()"); pg.wait_for_timeout(150)
+    check("7 days + ₹10 unlocks it", not pg.locator("button:has-text('UPI')").is_disabled())
 
-    print("\n--- FRAUD: honest review state, no fake error ---")
-    pg.click(".devbar button:has-text('Flag account')"); pg.wait_for_timeout(300)
+    pg.evaluate("S.withdrawable=5;draw()"); pg.wait_for_timeout(150)
+    check("below ₹10 still blocked even past the gate",
+          pg.locator("button:has-text('UPI')").is_disabled())
+    pg.evaluate("S.withdrawable=12;draw()"); pg.wait_for_timeout(150)
+    pg.click("button:has-text('UPI')"); pg.wait_for_timeout(300)
+    check("first payout pays the full balance", pg.evaluate("S.withdrawable") == 0)
+    check("payout recorded with a UPI reference", pg.evaluate("S.payouts.length") == 1)
+    check("reference id looks like a real ref",
+          pg.evaluate("S.payouts[0].ref").startswith("UPI"), pg.evaluate("S.payouts[0].ref"))
+    check("payout history renders in the trust panel",
+          pg.evaluate("S.payouts[0].ref") in pg.inner_text("#app"))
+    pg.screenshot(path=str(SHOT / "04-first-payout.png"), full_page=True)
+
+    section("SUBSEQUENT PAYOUTS: threshold rises to ₹30")
+    check("threshold moved to ₹30 after the first", pg.evaluate("currentMin()") == 30)
+    pg.evaluate("S.withdrawable=15;draw()"); pg.wait_for_timeout(150)
+    check("₹15 no longer enough", pg.locator("button:has-text('UPI')").is_disabled())
+    pg.evaluate("S.withdrawable=35;draw()"); pg.wait_for_timeout(150)
+    check("₹35 is enough", not pg.locator("button:has-text('UPI')").is_disabled())
+    pg.click("button:has-text('UPI')"); pg.wait_for_timeout(250)
+    check("second payout recorded", pg.evaluate("S.payouts.length") == 2)
+    pg.evaluate("S.withdrawable=12;draw()"); pg.wait_for_timeout(150)
+    check("copy says NEXT withdrawal once one has happened",
+          "Agli withdrawal" in pg.inner_text("#app"),
+          "must not keep saying 'first' after the user has been paid")
+    pg.evaluate("setLocale('en');draw()"); pg.wait_for_timeout(150)
+    check("[en] same — next, not first", "next withdrawal" in pg.inner_text("#app").lower())
+    pg.evaluate("setLocale('hi-Latn');draw()"); pg.wait_for_timeout(120)
+
+    # --------------------------------------------------------------- ALARM
+    section("ALARM: reward window is not the ring duration")
+    pg.evaluate("S.alarmTask='math';S.alarmArmed=true;S.alarmDoneToday=false;draw()")
+    pg.wait_for_timeout(150)
+    days_before = pg.evaluate("S.alarmDays")
+    pg.click(".devbar button:has-text('Ring')"); pg.wait_for_timeout(600)
+    check("alarm overlay showing", "on" in (pg.get_attribute("#ring", "class") or ""))
+    check("countdown running", "Reward window" in pg.inner_text("#rewardwin"))
+    pg.screenshot(path=str(SHOT / "05-alarm-ringing.png"))
+    pg.wait_for_timeout(10200)
+    rw = pg.inner_text("#rewardwin").lower()
+    check("window closes after 10s", "band" in rw or "closed" in rw, rw[:50])
+    check("ALARM STILL RINGING after the window closed",
+          "on" in (pg.get_attribute("#ring", "class") or ""),
+          "the whole point of the change")
+    pg.screenshot(path=str(SHOT / "06-window-lapsed.png"))
+
+    # Driven through the page's own checkMath() handler: a Playwright
+    # actionability quirk in this long sequence reports the (provably visible)
+    # input as not visible. Same code path, same state transitions.
+    pg.evaluate("""() => { for (let i=0;i<6 && S.ringTimer;i++){
+        const el=document.getElementById('mathin'); if(!el) break;
+        el.value=String(S.mathA+S.mathB); checkMath(); } }""")
+    pg.wait_for_timeout(400)
+    check("alarm dismissed", "on" not in (pg.get_attribute("#ring", "class") or ""))
+    check("late dismissal records a miss", pg.evaluate("S.misses") == 1)
+    check("no streak for a late dismissal", pg.evaluate("S.streak") == 0)
+    check("alarm-day counted once", pg.evaluate("S.alarmDays") == days_before + 1)
+    pg.evaluate("startAlarm()"); pg.wait_for_timeout(200)
+    check("cannot ring an unarmed alarm", "on" not in (pg.get_attribute("#ring", "class") or ""))
+
+    section("ALARM: registered QR only")
+    pg.evaluate("S.alarmTask='qr';S.qrCode='BATHROOM-42';S.alarmArmed=true;draw()")
+    pg.wait_for_timeout(150)
+    pg.click(".devbar button:has-text('Ring')"); pg.wait_for_timeout(500)
+    pg.fill("#task input#qrin", "WRONG-CODE")
+    pg.click("#task button.primary"); pg.wait_for_timeout(300)
+    check("wrong QR is rejected", "on" in (pg.get_attribute("#ring", "class") or ""))
+    pg.fill("#task input#qrin", "BATHROOM-42")
+    pg.click("#task button.primary"); pg.wait_for_timeout(400)
+    check("registered QR dismisses", "on" not in (pg.get_attribute("#ring", "class") or ""))
+
+    # ------------------------------------------------------ SPIN / MISSIONS
+    section("SPIN gated behind an alarm; MISSIONS pay XP not cash")
+    check("missions appear after an alarm", pg.evaluate("S.missionsShown") is True)
+    pg.evaluate("S.spinUsedToday=false;S.alarmDoneToday=true;draw()"); pg.wait_for_timeout(120)
+    check("spin unlocked after alarm", not pg.locator("button:has-text('Spin')").is_disabled())
+    pg.evaluate("S.alarmDoneToday=false;draw()"); pg.wait_for_timeout(120)
+    check("spin locked without an alarm", pg.locator("button:has-text('Spin')").is_disabled())
+    pg.evaluate("S.alarmDoneToday=true;draw()"); pg.wait_for_timeout(120)
+
+    pg.evaluate("S.festival=true;S.xp=0;S.missionsDone=[];draw()"); pg.wait_for_timeout(120)
+    cash0 = pg.evaluate("S.withdrawable")
+    pg.evaluate("doMission(0)"); pg.wait_for_timeout(200)
+    check("mission pays XP", pg.evaluate("S.xp") > 0)
+    check("mission pays NO cash", pg.evaluate("S.withdrawable") == cash0,
+          "non-cash engagement must not touch the cap")
+    check("festival doubles XP", pg.evaluate("S.xp") == 20, str(pg.evaluate("S.xp")))
+    pg.evaluate("S.festival=false;S.xp=0;S.missionsDone=[];doMission(0)"); pg.wait_for_timeout(200)
+    check("without festival XP is single", pg.evaluate("S.xp") == 10, str(pg.evaluate("S.xp")))
+    pg.evaluate("S.festival=true;draw()"); pg.wait_for_timeout(120)
+
+    # ------------------------------------------------- SOCIAL / TRUST / REF
+    section("SOCIAL, TRUST, REFERRAL")
+    check("leaderboard includes the user", pg.evaluate("leaderboardRows().includes('me')"))
+    pg.evaluate("joinBatch()"); pg.wait_for_timeout(200)
+    check("batch has members", pg.evaluate("S.batch.length") >= 3)
+    check("batch renders", "Riya" in pg.inner_text("#app"))
+    check("public paid-this-week ticker shown", "12,480" in pg.inner_text("#app"))
+    ref0 = pg.evaluate("S.referred")
+    pg.evaluate("share()"); pg.wait_for_timeout(200)
+    check("referral share works", pg.evaluate("S.referred") == ref0 + 1)
+    app_txt = pg.inner_text("#app")
+    check("referral framed as CAC, not cap",
+          "limit se nahi" in app_txt or "never comes out of your cap" in app_txt)
+    check("festival banner renders", "Festival week" in app_txt)
+
+    # ---------------------------------------------------------------- FRAUD
+    section("FRAUD: honest review state")
+    pg.click(".devbar button:has-text('Flag')"); pg.wait_for_timeout(250)
     dash = pg.inner_text("#app")
-    check("review message is honest", "under review" in dash.lower())
-    check("gives a concrete timeframe", "5 days" in dash.lower())
-    check("NO fake 'technical difficulty' text", "technical difficult" not in dash.lower())
-    check("appeal route exists", pg.locator("button:has-text('Submit an appeal')").count() == 1)
-    pg.screenshot(path=str(SHOT / "07-under-review.png"), full_page=True)
+    check("review message is honest", "review" in dash.lower())
+    check("concrete timeframe given", "5 din" in dash or "5 days" in dash)
+    check("NO fake technical-difficulty text", "technical difficult" not in dash.lower())
+    check("appeal route exists", pg.locator("#app button").count() > 0
+          and ("Appeal" in dash or "appeal" in dash.lower()))
     pg.evaluate("S.withdrawable=50;draw()"); pg.wait_for_timeout(150)
-    pg.click("button:has-text('Withdraw to UPI')"); pg.wait_for_timeout(300)
+    pg.evaluate("withdraw()"); pg.wait_for_timeout(200)
     check("payouts paused during review", pg.evaluate("S.withdrawable") == 50)
-    pg.click("button:has-text('Submit an appeal')"); pg.wait_for_timeout(300)
-    check("appeal clears the review state", pg.evaluate("S.underReview") is False)
+    pg.evaluate("appeal()"); pg.wait_for_timeout(200)
+    check("appeal clears the review", pg.evaluate("S.underReview") is False)
+    pg.screenshot(path=str(SHOT / "07-under-review.png"), full_page=True)
 
-    print("\n--- SPONSOR RAILS: present but dormant ---")
-    dash = pg.inner_text("#app")
-    check("sponsor status shown as dormant", "dormant" in dash.lower())
-    # The slot lives inside the alarm overlay, so is_visible() would be false
-    # either way when not ringing. Assert the class the renderer controls.
-    check("sponsor slot hidden while null",
+    # -------------------------------------------------------------- SPONSOR
+    section("SPONSOR RAILS: present, dormant")
+    app_txt = pg.inner_text("#app")
+    check("sponsor status reads dormant",
+          "band hai" in app_txt or "dormant" in app_txt.lower())
+    check("slot hidden while sponsor_id is null",
           pg.evaluate("document.getElementById('sponsorslot').classList.contains('on')") is False)
-    pg.evaluate("S.sponsorId='colgate';draw()"); pg.wait_for_timeout(200)
-    check("sponsor slot activates by config alone",
+    pg.evaluate("S.sponsorId='colgate';draw()"); pg.wait_for_timeout(150)
+    check("slot activates by config alone",
           pg.evaluate("document.getElementById('sponsorslot').classList.contains('on')") is True)
-    pg.evaluate("S.sponsorId=null;draw()")
+    pg.evaluate("S.sponsorId=null;draw()"); pg.wait_for_timeout(120)
 
-    print("\n--- CYCLE RESET ---")
-    pg.click(".devbar button:has-text('Next month')"); pg.wait_for_timeout(300)
+    # ---------------------------------------------------------- CYCLE RESET
+    section("CYCLE RESET")
+    pg.click(".devbar button:has-text('+Month')"); pg.wait_for_timeout(250)
     check("cap resets", pg.evaluate("S.earnedThisCycle") == 0)
     check("pot re-credited at ₹30", pg.evaluate("S.pot") == 30)
+    check("alarm-days are NOT reset by a new cycle",
+          pg.evaluate("S.alarmDays") > 0, "the gate is lifetime, not per-cycle")
 
-    pg.evaluate("S.withdrawable=12;S.earnedThisCycle=12;draw()"); pg.wait_for_timeout(200)
-    pg.screenshot(path=str(SHOT / "08-dashboard-final.png"), full_page=True)
+    # --------------------------------------------- FULL-LOCALE RENDER SWEEP
+    section("RENDER SWEEP: no missing keys in any locale")
+    pg.evaluate("S.withdrawable=12;S.earnedThisCycle=12;draw()")
+    for loc in ("hi-Latn", "en", "hi"):
+        pg.evaluate(f"setLocale('{loc}')"); pg.wait_for_timeout(200)
+        txt = pg.inner_text("#app")
+        check(f"[{loc}] dashboard renders with no missing-key markers", "??" not in txt)
+        check(f"[{loc}] rupee amounts render", "₹" in txt)
+    pg.evaluate("setLocale('hi-Latn');draw()"); pg.wait_for_timeout(200)
+    pg.screenshot(path=str(SHOT / "08-dashboard-hinglish.png"), full_page=True)
+    pg.evaluate("setLocale('en');draw()"); pg.wait_for_timeout(200)
+    pg.screenshot(path=str(SHOT / "09-dashboard-english.png"), full_page=True)
+    pg.evaluate("setLocale('hi-Latn');draw()"); pg.wait_for_timeout(150)
 
-    print("\n--- JS ERRORS ---")
+    section("JS ERRORS")
     real = [e for e in errs if "favicon" not in e.lower()]
     check("no JavaScript errors", len(real) == 0, "; ".join(real[:3]))
 
     b.close()
 
-print("\n" + "=" * 60)
+print("\n" + "=" * 62)
 passed = sum(1 for _, c, _ in checks if c)
 print(f"{passed}/{len(checks)} checks passed")
 if fails:

@@ -1,8 +1,10 @@
 # AlarmX
 
-An Android alarm app that pays users cash for waking up on time.
+An Android alarm app that pays students cash for waking up early to study.
 
-This directory holds the design work: the economics that set the reward ceiling, the spec that drives development, and a clickable prototype of the revised mechanics.
+Built for India first: Hinglish by default, designed around the phones and network conditions the target user actually has, and positioned for NEET / JEE / UPSC / board-exam preparation.
+
+This directory holds the design work — the economics that set the reward ceiling, the spec a developer builds from, and a clickable prototype of every mechanic.
 
 ---
 
@@ -10,41 +12,73 @@ This directory holds the design work: the economics that set the reward ceiling,
 
 | Path | What it is |
 |---|---|
-| `economics/AlarmX-unit-economics.xlsx` | The model that sets the earning cap. Read this first. |
-| `PRD.md` | Full product spec. The document a developer builds from. |
-| `prototype/index.html` | Interactive prototype. Open it in a browser, no setup. |
-| `tests/verify_prototype.py` | 48-check browser suite covering the golden and error paths. |
+| `economics/AlarmX-unit-economics.xlsx` | The model that sets the earning cap. **Read this first.** |
+| `economics/build_model.py` | Rebuilds the workbook from source |
+| `PRD.md` | Full product spec |
+| `prototype/index.html` | Interactive prototype. Open in a browser, no setup. |
+| `prototype/i18n.js` | Every user-facing string, in three locales |
+| `tests/verify_prototype.py` | 97-check browser suite |
 
 ---
 
 ## Start here: the number
 
-The economics model is the reason everything else looks the way it does.
-
-| Per active user per month | Conservative | **Base** | Optimistic |
+| Per active user / month | Conservative | **Base** | Optimistic |
 |---|---:|---:|---:|
 | Revenue | ₹10.05 | **₹23.42** | ₹57.74 |
-| Sustainable earning cap | ₹1.93 | **₹21.65** | ₹84.90 |
+| Sustainable earning cap | ₹1.16 | **₹16.75** | ₹63.18 |
 
-The original concept paid up to **₹95 per user per month**. In the base case that loses **₹39.18 per active user per month** — about **₹39 lakh a month at 100k MAU**. The sensitivity grid shows the ₹95 row is negative at every revenue level tested, including ₹50/user/month, which is more than double the base case.
+The original concept paid up to **₹95/user/month**. Base case, that loses **₹54.60 per active user per month**. The sensitivity grid shows ₹95 is loss-making at every revenue level tested, including ₹50/user/month — more than double the base case.
 
-**The launch cap is ₹20/month**, with a documented ladder for raising it as measured ARPU proves out. See PRD §2.
+**The launch cap is ₹15/month.** At 100k MAU that clears a 26% contribution margin after acquisition costs.
 
-Open the workbook and edit the blue cells. The two least reliable inputs are the survey resale values — they are placeholders, not sourced, and should be validated with a real data buyer before anyone counts on them.
+**Read the Conservative column before getting comfortable.** At the low end of the published India eCPM range the cap is ₹1.16, not ₹15. That is a realistic first-year outcome for an app with no traffic history, not a pessimism exercise.
+
+The two least reliable inputs are the survey resale values. They are placeholders, not sourced, and should be validated with a real data buyer before anyone counts that revenue.
 
 ---
 
-## Three design changes worth knowing about
+## The ₹10 first payout, and what it cost
 
-Each replaces something in the original concept that carried real risk.
+A user cannot reach a ₹30 minimum inside their first month at a ₹15 cap. Their first payout would land about six weeks in — and six weeks of "trust me" is exactly what every reward app that never pays also says.
 
-**1. The alarm rings until dismissed.** The 10-second limit is now a *reward window*, not the ring duration. Previously the alarm auto-dismissed after 10 seconds, which makes the app the reason someone misses a shift. Now it rings up to 5 minutes with escalating volume; dismissing inside 10 seconds earns the reward, dismissing after still stops the alarm but records a miss. The wake-up incentive is unchanged and the app can no longer cause an overslept morning.
+So the first payout is **₹10**, then ₹30 after.
 
-**2. Earning is capped, withdrawal is not.** The original design let users accrue ₹500–600 and released ₹60–100/month. That is a Play Store deceptive-behaviour risk and the specific mechanic behind "they won't let you withdraw" reviews. Now earning stops at the cap and everything earned is withdrawable in full within 48 hours.
+That is not free, and the model prices it exactly:
 
-**3. Flagged accounts get told the truth.** The proposed fake "technical difficulty" message is replaced with "Your account is under review, we'll update you within 5 days," plus an appeals route and a shadow payout throttle. Same effect on fraudsters, and false positives — which every fraud system produces — now have somewhere to go.
+| | v0.2 (₹30 first) | **v0.3 (₹10 first)** |
+|---|---:|---:|
+| Breakage | 40% | **25%** |
+| Sustainable cap | ₹21.65 | **₹16.75** |
+| Cost of the decision | — | **−₹4.90/user/month (−23%)** |
 
-The survey also became optional and paid, which is what makes the consent valid under the DPDP Act, and it now drips 2–3 questions a day instead of walling 30 up front. The drip is worth more: ₹6.50/user/month versus ₹3.75 for the amortised one-time dump.
+A lower threshold means fewer users churn without ever cashing out, so less of what is accrued goes unpaid, so real cash cost rises and the cap falls.
+
+**Worth it, because the first payout is acquisition, not a reward.** ₹10 plus a ₹3 fee is ₹13 per converting user, or ₹9.10 blended across all installs — **41% of a ₹22 paid install.** It buys a paid, retained, trusting user for less than half what an ad pays for a raw install that may never open the app twice. Booking it against the reward budget would wrongly depress the cap in every later month.
+
+### It needs a farming gate
+
+A ₹10 first payout is a ₹10 bounty on every fake account. Three conditions, all required:
+
+1. Play Integrity passing
+2. One first payout per verified phone number **and** device
+3. **≥7 distinct calendar days with a completed alarm**
+
+The third is load-bearing. It makes farming cost a week of real wall-clock time per ₹10, which cannot be compressed by running an emulator faster.
+
+---
+
+## Built for India
+
+**OEM battery killers are the single biggest technical risk in the product.** MIUI, ColorOS, Funtouch and One UI all aggressively kill background apps, and they dominate the devices this user owns. An alarm that does not fire on a Redmi is a dead app.
+
+The prototype includes the mitigation: pick your phone, get the literal menu path for your skin, with a verification pass afterwards rather than an assumption.
+
+Also specified in PRD §11: offline-first alarms, APK under 15MB, 2GB RAM targets, data-cost transparency on rewarded video, and Indian digit grouping (₹1,00,000 — not ₹100,000).
+
+**Language:** Hinglish default, English and Devanagari Hindi switchable. Hinglish needs no font or keyboard support and is how the target user actually reads. Every string lives in `i18n.js`, so adding Tamil or Bengali later is a data change, not a rebuild.
+
+**The wedge:** students. Waking at 5am to study is a real, already-felt need, so the money is a bonus on top of a reason the user already has — rather than the only reason to install, which is the fight you lose against a free stock alarm.
 
 ---
 
@@ -54,17 +88,16 @@ The survey also became optional and paid, which is what makes the consent valid 
 open prototype/index.html      # macOS
 ```
 
-No build step, no dependencies, no network. Everything is in the one file.
-
-A **DEV** bar sits at the bottom for testing: ring the alarm, skip the survey, advance a day or a month, force the cap, flag the account.
+No build step, no dependencies, no network. A **DEV** bar at the bottom lets you ring the alarm, switch language, jump the day counter, force the cap and flag the account.
 
 Worth doing in this order:
 
-1. **Skip the survey.** Confirm the app is fully usable and pays nothing.
-2. **Arm a math alarm, ring it, and let the 10 seconds lapse.** The alarm keeps ringing. That is the single most important change in the design.
-3. **Register a QR code, ring, and submit the wrong code.** It's rejected.
-4. **Hit the cap.** Read the wallet message — no locked balance, no "unlocks next month".
-5. **Flag the account.** Read the review message and use the appeal button.
+1. **Walk onboarding.** Language → exam → OEM setup → survey. Skip the survey and confirm the app still works fully.
+2. **Arm a math alarm, ring it, let the 10 seconds lapse.** The alarm keeps ringing. That is the single most important change in the design.
+3. **Try to withdraw with ₹15 but 0 alarm days.** Blocked — the gate, not the money, is what is missing.
+4. **Hit `7 days`, then withdraw.** ₹10 goes out with a UPI reference. Then watch the minimum become ₹30.
+5. **Press `Lang`** and read the same dashboard in all three languages.
+6. **Flag the account.** Read the review message and use the appeal.
 
 ### Tests
 
@@ -73,23 +106,26 @@ pip install playwright
 python3 tests/verify_prototype.py
 ```
 
-48 checks, all passing as of this commit. Two notes on honesty:
+97 checks, all passing as of this commit. They cover the payout gate, locale parity across all three languages, Indian number grouping, the alarm reward window, QR validation, and every regression from v0.2.
 
-- One step (solving math *after* the reward window closes) is driven through the page's own `checkMath()` handler rather than synthetic mouse events. A Playwright actionability quirk in that one long sequence reports the input as not visible, though it is provably visible and fills correctly in four isolated repros. Same code path, same state transitions, different event source.
-- The suite needs a Chromium binary. If Playwright's bundled version doesn't match the one installed, pass `executable_path` to `chromium.launch()`.
+Two honest notes:
+
+- One step (solving math *after* the reward window closes) is driven through the page's own `checkMath()` handler rather than synthetic mouse events. A Playwright actionability quirk in that one long sequence reports the input as not visible, though it is provably visible and fills correctly in isolated repros. Same code path, different event source.
+- The suite needs a Chromium binary. Set `CHROMIUM_PATH` if Playwright's bundled version doesn't match the installed one.
 
 ---
 
 ## What this is not
 
-The prototype is a design artefact for validating flows, not a production path. The real build is **native Android in Kotlin** — `AlarmManager` with exact-alarm permission, foreground service, Doze exemption, CameraX, Play Integrity. None of that is reachable from a web wrapper. PRD §8 has the full stack.
+The prototype is a design artefact for validating flows, not a production path. The real build is **native Android in Kotlin** — `AlarmManager` with exact-alarm permission, foreground service, Doze exemption, CameraX, Play Integrity. None of that is reachable from a web wrapper. PRD §8 has the stack.
 
-Not covered here: the Android implementation, PSP integration, brand partnerships, or the backend fraud service.
+Not covered here: the Android implementation, PSP integration, brand partnerships, the backend fraud service, or any study content. AlarmX is a wake-up app with study framing — the moment it starts competing with Physics Wallah it loses the thing that makes it work.
 
 ---
 
 ## Open questions
 
-The full list is PRD §10. The one that needs a decision before build:
+Full list in PRD §15. The two that matter most:
 
-**The ₹30 minimum withdrawal and the ₹20 cap conflict.** A user cannot reach ₹30 inside their first cycle, so the first payout lands about six weeks in — which contradicts the "pays fast, pays real" position the honest-cap design depends on. Surfaced by prototype testing. Recommended fix is a one-off first payout at ₹10, then ₹30 thereafter: the cheapest way to buy the "it actually paid me" moment.
+1. **What is the drip survey data actually worth?** Everything above the ad-revenue line rests on a placeholder. One signed indication from a real buyer settles it.
+2. **Is 7 alarm-days the right gate, or is 5 enough?** Too long and genuine users lose the early trust moment the ₹10 exists to create. Tune against real fraud data, not a guess made now.
