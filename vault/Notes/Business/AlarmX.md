@@ -64,11 +64,17 @@ It also settles the positioning tension. The panjika audience skews household an
 
 **Wrong panchang is worse than no panchang.** People plan fasts and rituals on this. A 60-date cross-check against printed almanacs for Kolkata and Chennai is a release blocker, and it has not been done yet.
 
+**Bangladesh is a third system, and it was a gap.** Bangladesh uses a revised arithmetic calendar with fixed month lengths that pins Pohela Boishakh to 14 April every year. West Bengal's drik panjika lands on the 15th in 2025, 2026 and 2027. Shipping only drik meant a Dhaka user got the wrong date on the biggest day of their year — and Bangladesh has more Bengali speakers than West Bengal does. It is also the cheapest system in the product: pure arithmetic, no astronomy, no licence.
+
+**The first external validation.** Two independent MIT implementations of the Bangladesh calendar were run over 1461 days and agreed on every single one, which makes them a usable oracle. AlarmX matches them exactly, 1461 of 1461, zero tolerance. That also confirms what both Bengali systems share — month names, month order, year numbering, Bengali numerals — and confirms the drik engine reproduces a documented real-world difference rather than an arbitrary one: West Bengal really did keep Poila Boishakh on 15 April 2025 while Bangladesh observed it on the 14th.
+
+The limit of that is worth stating plainly: those references compute no tithi, nakshatra, yoga or karana, and no drik dates. So the printed-panjika cross-check is untouched by it and still blocks release.
+
 ## Status
 
-Economics modelled, PRD at v0.4, prototype built and tested — **184 checks passing** (146 browser, 38 astronomy). The engine gets Puthandu, Poila Boishakh and Thai Pongal right across two years, including the sunset rule that moves Pongal from the 14th to the 15th in 2027.
+Economics modelled, PRD at v0.4, prototype built and tested — **212 checks passing** (155 browser, 38 astronomy, 19 cross-validation). The engine gets Puthandu, Poila Boishakh and Thai Pongal right across two years, including the sunset rule that moves Pongal from the 14th to the 15th in 2027.
 
-Not started: native Android build, PSP integration, brand partnerships, backend fraud service. Not verified: the 60-date almanac cross-check, and the Bengali month-start rule is matched against one year only.
+Not started: native Android build, PSP integration, brand partnerships, backend fraud service. Not verified: the 60-date almanac cross-check, every drik date that is not the new year, every tithi and nakshatra, and the Tamil 60-year cycle spellings.
 
 ## Links
 

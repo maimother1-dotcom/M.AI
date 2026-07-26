@@ -42,6 +42,12 @@ Domain trap to remember: **Bengali and Tamil solar calendars start their day by 
 
 Standing principle from this feature: **where being wrong is worse than being absent** (dates people plan fasts on, medical or financial figures), verification against an independent published source is a release blocker, and unverified work gets said out loud rather than implied as done.
 
+Validation technique worth reusing: **two independent implementations that agree with each other are a usable oracle; one is not.** Bijoy supplied a Python and a Go Bengali calendar library. Running both over 1461 days and finding zero disagreement is what made it safe to assert against them with zero tolerance. Freeze their agreed output as a golden file with a provenance header rather than vendoring the libraries, so the test has no runtime dependency.
+
+Second lesson from the same exercise: **check what a reference actually implements before treating it as ground truth.** Both libraries turned out to compute the Bangladesh arithmetic calendar, not the West Bengal drik panjika, and compute no tithi or nakshatra at all. Using them naively would have "validated" the wrong system and produced false confidence. Say precisely which claims a validation run does and does not support.
+
+That mistake-that-wasn't also found a real gap: **Bangladesh has more Bengali speakers than West Bengal and uses a different calendar.** Shipping only drik would have given every Dhaka user the wrong date on their biggest day. Note for market scoping: UPI does not reach Bangladesh, so payouts there need bKash or Nagad.
+
 ### WBCIL.com (day job)
 International marketing executive role. Client and customer facing. Outreach stack is Brevo plus Anymail Finder, which means the outreach rules in the rule bank apply directly here (`outreach-draft-only`, `outreach-no-em-dash`, `outreach-followup-timing`, `outreach-followup-short`).
 

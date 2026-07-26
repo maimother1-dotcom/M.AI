@@ -223,10 +223,15 @@ const LB_BASE = [
 
 /* Widget and calendar state, PRD 16. `dayOffset` is a dev-bar affordance so
    midnight rollover is demonstrable without waiting for midnight. */
+/* Dhaka is a different SYSTEM, not just a different city. Bangladesh uses a
+   revised arithmetic calendar that pins Pohela Boishakh to 14 April, while
+   West Bengal's drik panjika lands on the 15th most years. Serving a Dhaka
+   user the drik date is wrong on the biggest day of their year. */
 const REGIONS = [
-  { key: "kolkata", tradition: "bengali", system: "Vishuddha Siddhanta" },
-  { key: "chennai", tradition: "tamil",   system: "Thirukanitham" },
-  { key: "delhi",   tradition: "bengali", system: "Vishuddha Siddhanta" },
+  { key: "kolkata", tradition: "bengali",   system: "Vishuddha Siddhanta" },
+  { key: "dhaka",   tradition: "bengaliBD", system: "Bangladesh revised" },
+  { key: "chennai", tradition: "tamil",     system: "Thirukanitham" },
+  { key: "delhi",   tradition: "bengali",   system: "Vishuddha Siddhanta" },
 ];
 
 const S = {
@@ -283,6 +288,12 @@ function inr(n){
 /* ---- exam countdown ------------------------------------------------------ */
 /* ---- calendar helpers, PRD 16 ------------------------------------------- */
 function regionMeta(){ return REGIONS.find(r => r.key === S.region) || REGIONS[0]; }
+/* "Vishuddha Siddhanta (drik)" vs "Bangladesh revised (arithmetic)". The basis
+   matters as much as the name: one tracks the sun, the other is a fixed table. */
+function systemLabel(){
+  const r = regionMeta();
+  return r.system + " (" + t(r.tradition === "bengaliBD" ? "basisArith" : "basisDrik") + ")";
+}
 
 function isoOf(d){
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0")
@@ -318,7 +329,8 @@ function pNum(v){ return localDigits(v, panScript()); }
    daily calendar. The system in use is always named on screen — PRD 16.2. */
 function nativeDate(p, latin){
   const r = regionMeta();
-  const b = r.tradition === "tamil" ? p.tamil : p.bengali;
+  const b = r.tradition === "tamil" ? p.tamil
+          : r.tradition === "bengaliBD" ? p.bengaliBD : p.bengali;
   const month = latin ? b.monthLatin : b.month;
   const tail = r.tradition === "tamil"
     ? localYearName(b.yearName, panScript()) : pNum(b.year);
@@ -718,7 +730,7 @@ function renderCalendar(){
       ${WEEKDAYS.map(w => `<div class="dow">${w[0]}</div>`).join("")}
       ${cells}
     </div>
-    <div class="syslabel">${t("panjikaLabel", r.system)}</div>
+    <div class="syslabel">${t("panjikaLabel", systemLabel())}</div>
   </div>
 
   <div class="card">
@@ -754,7 +766,8 @@ function renderRegion(){
     <div class="opts" style="margin-top:12px">
       ${REGIONS.map(r => `<button onclick="pickRegion('${r.key}')">
         <b>${PLACES[r.key].name}</b><br>
-        <span class="dim">${r.system}</span></button>`).join("")}
+        <span class="dim">${r.system} (${
+          t(r.tradition === "bengaliBD" ? "basisArith" : "basisDrik")})</span></button>`).join("")}
     </div>
     <div class="syslabel">${t("regionWhy")}</div>
   </div>`;
@@ -970,7 +983,7 @@ window.cycleRegion = () => {
   const i = REGIONS.findIndex(r => r.key === S.region);
   S.region = REGIONS[(i + 1) % REGIONS.length].key;
   S.calSel = null;
-  toast(PLACES[S.region].name + " — " + regionMeta().system);
+  toast(PLACES[S.region].name + " — " + systemLabel());
   draw();
 };
 window.cycleLang = () => {

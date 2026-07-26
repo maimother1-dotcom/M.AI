@@ -487,20 +487,33 @@ Fields computed: tithi, nakshatra, yoga, karana, sunrise, sunset, Rahu Kalam, Ya
 
 The competing systems genuinely disagree on dates, and families follow one or the other.
 
-| Tradition | Basis | Version |
-|---|---|---|
-| **Vishuddha Siddhanta** (Bengali) | Drik / observational | **v1** |
-| Gupta Press (Bengali) | Surya Siddhanta mean positions | v2 |
-| **Thirukanitham** (Tamil) | Drik / observational | **v1** |
-| Vakya (Tamil) | Traditional mean positions | v2 |
+| Tradition | Region | Basis | Version |
+|---|---|---|---|
+| **Vishuddha Siddhanta** | West Bengal | Drik / observational | **v1** |
+| **Bangladesh revised** | Bangladesh | Arithmetic, fixed month lengths | **v1** |
+| Gupta Press | West Bengal | Surya Siddhanta mean positions | v2 |
+| **Thirukanitham** | Tamil Nadu | Drik / observational | **v1** |
+| Vakya | Tamil Nadu | Traditional mean positions | v2 |
 
-Scoping honesty: Gupta Press and Vakya are **not an offset** applied to drik values. They need a separate Surya Siddhanta mean-position calculator, which is its own piece of work. v1 ships drik only and **names the system in use on screen**, so a Gupta Press household knows immediately what it is looking at rather than quietly getting the wrong dates.
+**Bangladesh is a different system, not a different city.** It pins Pohela Boishakh to 14 April every year, while drik lands on the 15th in most years — 2025, 2026 and 2027 all differ, 2028 agrees. Serving a Dhaka user the West Bengal date is wrong on the biggest day of their year. It is also the cheapest system AlarmX will ever add: pure arithmetic, no astronomy, and it is verified exactly against two independent implementations across 1461 days (§16.3).
+
+Scoping honesty: Gupta Press and Vakya are **not an offset** applied to drik values. They need a separate Surya Siddhanta mean-position calculator, which is its own piece of work. v1 ships drik plus the Bangladesh arithmetic calendar, and **names the system and its basis on screen** — "Vishuddha Siddhanta (drik)" or "Bangladesh revised (arithmetic)" — so a household knows immediately what it is looking at rather than quietly getting the wrong dates.
 
 ### 16.3 Validation gate — release blocker
 
 **Wrong panchang is worse than no panchang.** People plan fasts, rituals and auspicious timings on this. It is not a cosmetic bug class.
 
-Before release: cross-check computed output against published almanacs across **60 dates spanning a full year, for Kolkata and Chennai**, comparing tithi and nakshatra names *and* transition times. Encoded as a test fixture with real reference values, not a spot check. Any mismatch is a failure, not a warning.
+**Done.** The Bangladesh arithmetic calendar is validated *exactly* — 1461 days, 2025 to 2028, against two independent MIT-licensed implementations that agree with each other on every day. Zero tolerance, zero mismatches. That run also confirms the parts both Bengali systems share: month names, month order, year numbering and Bengali numerals. And it confirms the drik engine reproduces a documented real-world difference rather than an arbitrary one — West Bengal really did keep Poila Boishakh on 15 April 2025 while Bangladesh observed it on the 14th.
+
+Provenance and how to regenerate: `tests/reference/regenerate.md`. Assertions: `tests/verify_bengali_cross.js`.
+
+**Still outstanding, and still blocking.** Those references compute no tithi, nakshatra, yoga or karana, and no drik dates. So the following remains untouched by that work:
+
+- **60 dates spanning a full year, for Kolkata and Chennai**, against published almanacs, comparing tithi and nakshatra names *and* transition times. Encoded as a fixture with real reference values, not a spot check.
+- The drik Bengali month-start rule is currently confirmed against **one year only**, plus the four new-year dates above.
+- The Tamil 60-year cycle spellings are unverified. The cycle *position* is tested; the Tamil-script names are not.
+
+Any mismatch is a failure, not a warning.
 
 ### 16.4 The widget
 

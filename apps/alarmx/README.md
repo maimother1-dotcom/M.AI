@@ -17,9 +17,11 @@ This directory holds the design work — the economics that set the reward ceili
 | `PRD.md` | Full product spec |
 | `prototype/index.html` | Interactive prototype. Open in a browser, no setup. |
 | `prototype/i18n.js` | Every user-facing string, in five locales |
-| `prototype/panchang.js` | Regional calendar engine — tithi, nakshatra, Bengali and Tamil dates |
-| `tests/verify_prototype.py` | 146-check browser suite |
+| `prototype/panchang.js` | Regional calendar engine — tithi, nakshatra, three Bengali/Tamil calendar systems |
+| `tests/verify_prototype.py` | 155-check browser suite |
 | `tests/verify_panchang.js` | 38-check astronomy suite, runs in node |
+| `tests/verify_bengali_cross.js` | 19-check cross-validation against two independent Bengali calendar implementations |
+| `tests/reference/` | Frozen reference data and its provenance |
 
 ---
 
@@ -101,9 +103,11 @@ It also settles a positioning tension: the panjika audience skews household and 
 - **Nothing is scraped from bengalicalendar.com or tamildailycalendar.com.** Their content is copyrighted, both return HTTP 403 to automated requests, and every value here is computed independently. They are references for which fields to show, never a data source.
 - **The Swiss Ephemeris Professional licence must be bought before distribution.** The AGPL alternative would force all of AlarmX open-source, including the anti-farming gate — self-defeating for a product whose security model assumes the attacker has the source.
 
-**The two traditions genuinely disagree, and the app says which one it is using.** v1 ships drik systems only: Vishuddha Siddhanta for Bengali, Thirukanitham for Tamil. Gupta Press and Vakya are not an offset on those numbers — they need a separate Surya Siddhanta calculator — so they are v2, and the current system is named on screen so a Gupta Press household is not quietly given the wrong dates.
+**The traditions genuinely disagree, and the app says which one it is using** — name and basis both, "Vishuddha Siddhanta (drik)" or "Bangladesh revised (arithmetic)". v1 ships three: Vishuddha Siddhanta for West Bengal, the revised arithmetic calendar for Bangladesh, and Thirukanitham for Tamil Nadu. Gupta Press and Vakya are not an offset on those numbers — they need a separate Surya Siddhanta calculator — so they are v2.
 
-Worth seeing: 14 April 2026 is Puthandu in Chennai but still 30 Choitro in Kolkata. Thai Pongal is 14 January in 2026 and 15 January in 2027, because the sankranti crosses sunset. Both fall out of the engine rather than a lookup table.
+**Bangladesh is a different system, not a different city.** It pins Pohela Boishakh to 14 April every year; drik lands on the 15th in 2025, 2026 and 2027, and on the 14th in 2028. Serving a Dhaka user the West Bengal date is wrong on the biggest day of their year. It is also the cheapest system here — pure arithmetic, no astronomy — and the only one validated exactly against outside sources.
+
+Worth seeing: 14 April 2026 is Puthandu in Chennai, Pohela Boishakh in Dhaka, and still 30 Choitro in Kolkata — three systems, three answers, one day. Thai Pongal is 14 January in 2026 and 15 January in 2027, because the sankranti crosses sunset. All of it falls out of the engine rather than a lookup table.
 
 ---
 
@@ -129,13 +133,14 @@ Worth doing in this order:
 
 ```bash
 pip install playwright
-python3 tests/verify_prototype.py     # 146 checks, browser
-node tests/verify_panchang.js         # 38 checks, no dependencies
+python3 tests/verify_prototype.py       # 155 checks, browser
+node tests/verify_panchang.js           # 38 checks, no dependencies
+node tests/verify_bengali_cross.js      # 19 checks, no dependencies
 ```
 
-**184 checks, all passing as of this commit.**
+**212 checks, all passing as of this commit.**
 
-`verify_prototype.py` covers the payout gate, locale parity across all five languages, Indian number grouping, the alarm reward window, QR validation, the 4x2 widget geometry, the calendar screen, and every regression from v0.2.
+`verify_prototype.py` covers the payout gate, locale parity across all five languages, the three Bengali/Tamil calendar systems, Indian number grouping, the alarm reward window, QR validation, the 4x2 widget geometry, the calendar screen, and every regression from v0.2.
 
 `verify_panchang.js` checks the astronomy from first principles rather than against a copied almanac: sun longitude at the 2026 solstices and equinoxes, lunation length, the tithi definition at syzygy, Lahiri ayanamsa, the Mesha sankranti window across four years, and the real festival anchors — Puthandu, Poila Boishakh and Thai Pongal in two different years, which land on different days under the two traditions.
 
@@ -145,7 +150,9 @@ Two honest notes:
 - The suite needs a Chromium binary. Set `CHROMIUM_PATH` if Playwright's bundled version doesn't match the installed one.
 - The Bengali and Tamil screenshots need Indic fonts on the machine (`fonts-noto-core`, `fonts-indic`). Without them the strings are still correct but paint as boxes.
 
-**The panchang is not release-ready and the tests say so.** What is verified is that the astronomy is internally correct and that the calendar anchors land on the right dates. What is *not* done is the cross-check against a printed Vishuddha Siddhanta panjika and a Tamil daily calendar over 60 dates. Until that is done the Bengali month-start rule is confirmed against one year only. PRD §16.3 treats this as a release blocker, not a warning.
+`verify_bengali_cross.js` checks the Bengali calendar against an external oracle. Two independent MIT implementations of the revised Bangladesh calendar were run over 1461 days and agreed on every one; their agreed output is frozen in `tests/reference/`. AlarmX's arithmetic calendar matches it **exactly, 1461 of 1461**, with no tolerance. See `tests/reference/regenerate.md`.
+
+**The panchang is not release-ready and the tests say so.** What is verified is that the astronomy is internally correct and that the calendar anchors land on the right dates. The Bangladesh arithmetic calendar is now externally validated to the day. What is *not* done is the cross-check against a printed Vishuddha Siddhanta panjika and a Tamil daily calendar over 60 dates — those references compute no tithi, nakshatra, yoga or karana, and no drik dates, so none of that is touched. The drik Bengali month-start rule is confirmed against one year plus four new-year dates. PRD §16.3 treats this as a release blocker, not a warning.
 
 ---
 

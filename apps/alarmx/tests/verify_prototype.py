@@ -473,8 +473,42 @@ with sync_playwright() as p:
           pg.evaluate("localName('tithi', tithiAt(toJD(2026,7,26,0)), 'hi-Latn')")
           == pg.evaluate("tithiAt(toJD(2026,7,26,0)).name"))
 
-    pg.evaluate("cycleRegion()"); pg.wait_for_timeout(250)
+    section("BANGLADESH: a different system, not just a different city")
+    # Bangladesh uses a revised ARITHMETIC calendar with fixed month lengths,
+    # pinning Pohela Boishakh to 14 April. Serving a Dhaka user the West Bengal
+    # drik date is wrong on the biggest day of their year.
+    check("Dhaka is offered as its own calendar system",
+          pg.evaluate("REGIONS.some(r => r.key === 'dhaka' && r.tradition === 'bengaliBD')"))
+    check("Dhaka is a real place with the right timezone",
+          pg.evaluate("PLACES.dhaka.tz") == 6, str(pg.evaluate("PLACES.dhaka.tz")))
+    check("Bangladesh pins Pohela Boishakh to 14 April every year",
+          pg.evaluate("""[2025,2026,2027,2028].every(y => {
+              const b = bengaliDateBD(y,4,14); return b.day === 1 && b.monthLatin === 'Boishakh'; })"""))
+    check("West Bengal drik and Bangladesh disagree on the 2026 new year",
+          pg.evaluate("panchang('2026-04-14','kolkata').bengali.day") == 30
+          and pg.evaluate("bengaliDateBD(2026,4,14).day") == 1,
+          "drik 30 Choitro vs BD 1 Boishakh")
+    check("the arithmetic system is labelled as arithmetic, not drik",
+          pg.evaluate("bengaliDateBD(2026,4,14).basis") == "arithmetic")
+
+    pg.evaluate("S.region='dhaka';S.calSel=null;draw()"); pg.wait_for_timeout(250)
+    check("selecting Dhaka switches the displayed date to the BD system",
+          pg.evaluate("nativeDate(pan(curISO()), true).monthLatin")
+          == pg.evaluate("bengaliDateBD(...curISO().split('-').map(Number)).monthLatin"))
+    pg.evaluate("go('calendar')"); pg.wait_for_timeout(250)
+    caltxt = pg.inner_text("#app")
+    check("the calendar screen names the Bangladesh system and its basis",
+          "Bangladesh revised" in caltxt and "arithmetic" in caltxt)
+    pg.evaluate("S.region='kolkata';S.calSel=null;draw()"); pg.wait_for_timeout(200)
+    check("Kolkata is labelled drik, not arithmetic",
+          "drik" in pg.inner_text("#app") and "arithmetic" not in pg.inner_text("#app"))
+
+    pg.evaluate("S.region='kolkata';cycleRegion()"); pg.wait_for_timeout(250)
     check("switching region switches the tradition shown",
+          pg.evaluate("regionMeta().tradition") == "bengaliBD",
+          pg.evaluate("regionMeta().tradition"))
+    pg.evaluate("cycleRegion()"); pg.wait_for_timeout(250)
+    check("cycling again reaches the Tamil tradition",
           pg.evaluate("regionMeta().tradition") == "tamil",
           pg.evaluate("regionMeta().tradition"))
     pg.evaluate("setLocale('ta');draw()"); pg.wait_for_timeout(250)

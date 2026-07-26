@@ -405,6 +405,50 @@ function bengaliDate(jd, tz, lat, lon) {
   };
 }
 
+/* ---- Bangladesh revised calendar (arithmetic, not astronomical) ----------- */
+/* A THIRD system, and the cheapest one AlarmX will ever add: no astronomy at
+   all. Bangladesh adopted a revised calendar with FIXED month lengths, which
+   pins Pohela Boishakh to 14 April every year. West Bengal's Vishuddha
+   Siddhanta is astronomical, so it lands on the 15th in most years. That is a
+   real, well-known one-day gap between the two countries, not a bug.
+
+   Shipping drik to a Dhaka user gives them the wrong date on the biggest day
+   of their year. This function is why that does not happen.
+
+   The rules below are the published standard, implemented from the rules
+   themselves. Verified against two independent MIT implementations across
+   1461 days in tests/verify_bengali_cross.js — all 1461 match exactly. */
+const BD_MONTH_LAST_DAY = [13, 12, 14, 13, 14, 14, 15, 15, 15, 15, 14, 14];
+const BD_MONTH_LENGTH   = [30, 30, 30, 30, 31, 31, 31, 31, 31, 30, 30, 30];
+/* Bengali month that overlaps each Gregorian month, January first. */
+const BD_MONTHS_BY_GREG = [8, 9, 10, 11, 0, 1, 2, 3, 4, 5, 6, 7];
+
+function isGregLeap(y) { return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0; }
+
+function bengaliDateBD(y, m, d) {          // m is 1-indexed
+  const gi = m - 1;
+  /* The year turns on 14 April, so anything from then on is the new year. */
+  const year = (gi > 3 || (gi === 3 && d > 13)) ? y - 593 : y - 594;
+  let day, gIdx;
+  if (d <= BD_MONTH_LAST_DAY[gi]) {
+    /* Still in the month that started mid-way through the previous Gregorian
+       month. Falgun gains a day in a Gregorian leap year. */
+    let len = BD_MONTH_LENGTH[gi];
+    if (gi === 2 && isGregLeap(y)) len += 1;
+    day = len + d - BD_MONTH_LAST_DAY[gi];
+    gIdx = gi;
+  } else {
+    day = d - BD_MONTH_LAST_DAY[gi];
+    gIdx = (gi + 1) % 12;
+  }
+  const rashi = BD_MONTHS_BY_GREG[gIdx];
+  return {
+    year, day,
+    monthIndex: rashi, month: BENGALI_MONTHS[rashi], monthLatin: BENGALI_MONTHS_LATIN[rashi],
+    system: "Bangladesh revised", basis: "arithmetic",
+  };
+}
+
 function tamilDate(jd, tz, lat, lon) {
   const { rashi, day } = solarMonthDay(jd, tz, "tamil", lat, lon);
   const startY = yearStartGregorian(jd, tz, "tamil", lat, lon);
@@ -438,6 +482,7 @@ function festivalsFor(p) {
 /* ---- Public API ---------------------------------------------------------- */
 const PLACES = {
   kolkata: { name: "Kolkata", lat: 22.5726, lon: 88.3639, tz: 5.5 },
+  dhaka:   { name: "Dhaka",   lat: 23.8103, lon: 90.4125, tz: 6.0 },
   chennai: { name: "Chennai", lat: 13.0827, lon: 80.2707, tz: 5.5 },
   delhi:   { name: "Delhi",   lat: 28.6139, lon: 77.2090, tz: 5.5 },
 };
@@ -462,6 +507,7 @@ function panchang(dateISO, placeKey = "kolkata") {
     sunrise: sun.sunrise, sunset: sun.sunset,
     periods: eighthPeriods(sun.sunrise, sun.sunset, weekday),
     bengali: bengaliDate(jd, place.tz, place.lat, place.lon),
+    bengaliBD: bengaliDateBD(y, m, d),
     tamil: tamilDate(jd, place.tz, place.lat, place.lon),
   };
   p.festivals = festivalsFor(p);
@@ -476,5 +522,5 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = { panchang, sunLongitude, moonLongitude, sidereal, ayanamsa,
                      toJD, tithiAt, nakshatraAt, PLACES, fmtHM, fmtSpan, norm360,
                      sankrantiJD, localName, localPaksha, localDigits, localYearName,
-                     NAMES_LOCAL, TAMIL_YEARS };
+                     NAMES_LOCAL, TAMIL_YEARS, bengaliDateBD };
 }
