@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AlarmX — prototype v0.2</title>
+<style>
+  :root{
+    --bg:#0b1020; --panel:#151b31; --panel2:#1c2440; --line:#2a3459;
+    --ink:#eef1fa; --dim:#98a2c8; --accent:#5b8cff; --good:#3ddc97;
+    --warn:#ffb547; --bad:#ff6b6b; --gold:#ffd166;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#070a15;color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    display:flex;justify-content:center;padding:16px}
+  #phone{width:100%;max-width:430px;background:var(--bg);border:1px solid var(--line);
+    border-radius:26px;overflow:hidden;position:relative;min-height:760px;
+    box-shadow:0 20px 60px rgba(0,0,0,.6)}
+  header{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;
+    align-items:center;justify-content:space-between;background:var(--panel)}
+  .brand{font-weight:700;letter-spacing:.5px}
+  .brand span{color:var(--accent)}
+  main{padding:16px 18px 96px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:14px;margin-bottom:12px}
+  .card h3{margin:0 0 10px;font-size:13px;text-transform:uppercase;
+    letter-spacing:.8px;color:var(--dim)}
+  .row{display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .big{font-size:30px;font-weight:700}
+  .dim{color:var(--dim);font-size:12px;line-height:1.5}
+  .pill{display:inline-block;padding:3px 9px;border-radius:999px;font-size:11px;
+    background:var(--panel2);border:1px solid var(--line);color:var(--dim)}
+  button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--ink);padding:10px 14px}
+  button:hover{border-color:var(--accent)}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#08111f;font-weight:700}
+  button.ghost{background:transparent}
+  button.wide{width:100%;margin-top:8px}
+  .bar{height:8px;background:var(--panel2);border-radius:99px;overflow:hidden;margin:8px 0}
+  .bar>i{display:block;height:100%;background:var(--accent)}
+  .bar>i.good{background:var(--good)} .bar>i.warn{background:var(--warn)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .shelf{display:flex;gap:8px;flex-wrap:wrap}
+  .shelf div{flex:1 1 46%;background:var(--panel2);border:1px solid var(--line);
+    border-radius:10px;padding:10px;font-size:12px}
+  input,select{font:inherit;background:var(--panel2);border:1px solid var(--line);
+    color:var(--ink);border-radius:10px;padding:10px;width:100%}
+  label.chk{display:flex;gap:10px;align-items:flex-start;margin:10px 0;font-size:12.5px;
+    line-height:1.5;color:var(--dim)}
+  label.chk input{width:auto;margin-top:2px}
+  /* alarm overlay */
+  /* Anchored to the top of the frame, not centred: the frame can be taller than
+     the viewport, and a centred overlay pushes the clock out of view. */
+  #ring{position:absolute;inset:0;background:#3b0d10;display:none;flex-direction:column;
+    align-items:center;justify-content:flex-start;padding:56px 24px 24px;
+    text-align:center;z-index:20}
+  #ring.on{display:flex}
+  #ring.pulse{animation:p .9s infinite}
+  @keyframes p{0%,100%{background:#3b0d10}50%{background:#6a1218}}
+  .clock{font-size:52px;font-weight:800;letter-spacing:2px}
+  .window{margin:14px 0;padding:10px 16px;border-radius:12px;border:1px solid #ff8080;
+    background:rgba(255,107,107,.12)}
+  .window.lost{border-color:#8a93b5;background:rgba(255,255,255,.05);color:var(--dim)}
+  #task{width:100%;max-width:330px;margin-top:16px}
+  .toast{position:absolute;left:18px;right:18px;bottom:18px;background:var(--panel2);
+    border:1px solid var(--accent);border-radius:12px;padding:12px;font-size:13px;
+    z-index:40;display:none}
+  .toast.on{display:block}
+  .devbar{position:absolute;left:0;right:0;bottom:0;background:#0a0f1e;
+    border-top:1px solid var(--line);padding:8px;display:flex;gap:6px;flex-wrap:wrap;z-index:15}
+  .devbar button{font-size:10.5px;padding:6px 8px}
+  .devbar b{font-size:10px;color:var(--dim);align-self:center;margin-right:2px}
+  .banner{border-radius:12px;padding:12px;margin-bottom:12px;font-size:12.5px;line-height:1.55}
+  .banner.warn{background:rgba(255,181,71,.1);border:1px solid var(--warn);color:#ffdca8}
+  .banner.info{background:rgba(91,140,255,.1);border:1px solid var(--accent);color:#cfe0ff}
+  .q{font-size:16px;font-weight:600;margin:6px 0 12px;line-height:1.4}
+  .opts button{width:100%;text-align:left;margin-bottom:8px}
+  .sponsor{display:none;margin-top:8px;padding:8px;border-radius:10px;
+    border:1px dashed var(--line);color:var(--dim);font-size:11.5px}
+  .sponsor.on{display:block}
+  hr{border:0;border-top:1px solid var(--line);margin:12px 0}
+</style>
+</head>
+<body>
+<div id="phone">
+  <header>
+    <div class="brand">Alarm<span>X</span></div>
+    <div class="pill" id="daypill">Day 1</div>
+  </header>
+  <main id="app"></main>
+  <div id="ring">
+    <div class="clock" id="ringclock">06:30</div>
+    <div class="dim">Alarm ringing — it will not stop on its own</div>
+    <div class="window" id="rewardwin">Reward window: 10s</div>
+    <div id="task"></div>
+    <div class="sponsor" id="sponsorslot">Sponsored scan slot — hidden while sponsor_id is null</div>
+  </div>
+  <div class="toast" id="toast"></div>
+  <div class="devbar" id="devbar"></div>
+</div>
+<script>
+"use strict";
+
+/* ---------------------------------------------------------------
+   AlarmX prototype v0.2
+   Demonstrates the revised mechanics from PRD.md.
+   Self-contained: no network, no build step. Open the file directly.
+   --------------------------------------------------------------- */
+
+const CAP = 20;              // monthly earning cap, rupees (PRD 2)
+const POT_START = 30;        // streak pot credited on day 1 (PRD 4.2)
+const MIN_WITHDRAW = 30;     // PRD 6.2
+const REWARD_WINDOW = 10000; // ms (PRD 3.1)
+const MAX_RING = 300000;     // 5 minutes, per PRD 3.1
+
+const SIGNUP_Q = [
+  ["Your age group?", ["Under 18","18–24","25–34","35–44","45+"]],
+  ["Gender?", ["Male","Female","Other","Prefer not to say"]],
+  ["Which city do you live in?", ["Metro","Tier 2","Tier 3","Rural"]],
+  ["Employment?", ["Student","Salaried","Self-employed","Looking"]],
+  ["Usual wake-up time?", ["Before 5am","5–6am","6–7am","7–8am","After 8am"]],
+  ["Dog person or cat person?", ["Dog","Cat","Both","Neither"]],
+  ["Morning lark or night owl?", ["Lark","Owl","Depends"]],
+  ["Tea or coffee first?", ["Tea","Coffee","Neither"]]
+];
+const DRIP_Q = [
+  ["Which do you buy most often?", ["Colgate","Pepsodent","Dabur","Patanjali"]],
+  ["How do you usually pay in shops?", ["UPI","Cash","Card","Wallet"]],
+  ["Monthly spend on personal care?", ["<₹500","₹500–1000","₹1000–2000",">₹2000"]]
+];
+
+const S = {
+  screen: "onboarding",
+  surveyIdx: 0,
+  surveyDone: false,
+  surveySkipped: false,
+  consentApp: false,
+  consentResale: false,
+  earnedThisCycle: 0,
+  withdrawable: 0,
+  pot: POT_START,
+  misses: 0,
+  streak: 0,
+  grace: 3,
+  day: 1,
+  qrCode: "",
+  alarmTask: "math",
+  alarmDifficulty: "normal",
+  alarmArmed: false,
+  alarmDoneToday: false,
+  spinUsedToday: false,
+  dripDoneToday: false,
+  dripIdx: 0,
+  buddy: null,
+  underReview: false,
+  sponsorId: null,        // dormant — PRD 4.6
+  shelf: { freeze:0, sounds:false, theme:false },
+  ringStart: 0,
+  ringTimer: null,
+  windowLost: false,
+  mathNeed: 3, mathGot: 0, mathA:0, mathB:0
+};
+
+const $ = id => document.getElementById(id);
+const money = n => "₹" + (Math.round(n*100)/100).toFixed(2).replace(/\.00$/,"");
+let toastTimer = null;
+function toast(msg){
+  const t = $("toast"); t.textContent = msg; t.classList.add("on");
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=>t.classList.remove("on"), 3200);
+}
+
+/* -------- earning respects the cap (PRD 2 / 6.1) -------- */
+function earn(amount, why){
+  const room = CAP - S.earnedThisCycle;
+  if (room <= 0){
+    toast("Monthly cap of " + money(CAP) + " reached. Resets on day 1.");
+    return 0;
+  }
+  const paid = Math.min(amount, room);
+  S.earnedThisCycle += paid;
+  S.withdrawable += paid;
+  if (paid < amount) toast("Capped: earned " + money(paid) + " of " + money(amount) + " (" + why + ")");
+  else toast("+" + money(paid) + " — " + why);
+  return paid;
+}
+
+function potTier(){
+  if (S.misses <= 4) return 30;
+  if (S.misses <= 10) return 15;
+  return 5;
+}
+function nextTierAt(){
+  if (S.misses <= 4) return 5 - S.misses;
+  if (S.misses <= 10) return 11 - S.misses;
+  return null;
+}
+
+/* ============================ ONBOARDING ============================ */
+function renderOnboarding(){
+  const i = S.surveyIdx;
+  if (i >= SIGNUP_Q.length) return renderConsent();
+  const [q, opts] = SIGNUP_Q[i];
+  return `
+  <div class="banner info">
+    <b>The survey is optional.</b> AlarmX works fully without it. Answer all 8 and
+    you get ${money(5)}. You can stop at any point.
+  </div>
+  <div class="card">
+    <h3>Question ${i+1} of ${SIGNUP_Q.length}</h3>
+    <div class="bar"><i style="width:${(i/SIGNUP_Q.length*100)}%"></i></div>
+    <div class="q">${q}</div>
+    <div class="opts">
+      ${opts.map(o=>`<button onclick="answer()">${o}</button>`).join("")}
+    </div>
+    <button class="ghost wide" onclick="skipSurvey()">Skip the survey and use the app</button>
+  </div>
+  <div class="card">
+    <h3>Why we ask</h3>
+    <div class="dim">
+      The remaining questions arrive 2–3 per day instead of all at once, and each
+      batch pays. Recurring answers from someone who stays are worth far more than
+      thirty answers from someone rushing to a signup bonus.
+    </div>
+  </div>`;
+}
+
+function renderConsent(){
+  return `
+  <div class="card">
+    <h3>Before we finish</h3>
+    <div class="q">Two separate permissions</div>
+    <label class="chk">
+      <input type="checkbox" id="c1" ${S.consentApp?"checked":""} onchange="S.consentApp=this.checked;draw()">
+      <span><b style="color:var(--ink)">Required.</b> Create my AlarmX account and store my
+      alarms, streak and wallet.</span>
+    </label>
+    <label class="chk">
+      <input type="checkbox" id="c2" ${S.consentResale?"checked":""} onchange="S.consentResale=this.checked;draw()">
+      <span><b style="color:var(--ink)">Optional.</b> Include my survey answers in
+      <b style="color:var(--ink)">aggregated</b> market-research reports sold to third parties.
+      Never your name, number or device. Minimum group size of 50. You can withdraw this
+      in Settings at any time, as easily as you gave it.</span>
+    </label>
+    <div class="dim" style="margin-top:6px">
+      Unticking the second box still pays your ${money(5)} and still gives you the full app.
+      That is what makes the consent valid under the DPDP Act.
+    </div>
+    <button class="primary wide" ${S.consentApp?"":"disabled"} onclick="finishSurvey()">
+      Finish and collect ${money(5)}
+    </button>
+    <button class="ghost wide" onclick="skipSurvey()">Skip — no bonus, full app</button>
+  </div>`;
+}
+
+window.answer = function(){ S.surveyIdx++; draw(); };
+window.skipSurvey = function(){
+  S.surveySkipped = true; S.surveyDone = true; S.screen = "dashboard";
+  toast("Survey skipped. Every feature still works.");
+  draw();
+};
+window.finishSurvey = function(){
+  S.surveyDone = true; S.screen = "dashboard";
+  earn(5, "signup survey");
+  draw();
+};
+
+/* ============================ DASHBOARD ============================ */
+function renderDashboard(){
+  const capPct = Math.min(100, S.earnedThisCycle/CAP*100);
+  const potPct = S.pot/POT_START*100;
+  const nt = nextTierAt();
+  const canWithdraw = S.withdrawable >= MIN_WITHDRAW;
+
+  return `
+  ${S.underReview ? `
+    <div class="banner warn">
+      <b>Your account is under review.</b> We'll update you within 5 days. Earning
+      continues in the meantime; payouts are paused until the review closes.
+      <button class="wide" onclick="appeal()">Submit an appeal</button>
+    </div>` : ""}
+
+  <div class="card">
+    <h3>Wallet</h3>
+    <div class="row"><div class="big">${money(S.withdrawable)}</div>
+      <div class="pill">${S.surveySkipped?"survey skipped":"survey done"}</div></div>
+    <div class="bar"><i class="${capPct>=100?"warn":"good"}" style="width:${capPct}%"></i></div>
+    <div class="dim">
+      Earned ${money(S.earnedThisCycle)} of this month's ${money(CAP)} cap.
+      ${capPct>=100
+        ? "You've hit the maximum. It resets on day 1 — nothing further accrues until then."
+        : "Everything you earn is withdrawable in full, within 48 hours."}
+    </div>
+    ${!canWithdraw ? `<div class="dim" style="margin-top:6px;color:var(--warn)">
+      ${money(MIN_WITHDRAW - S.withdrawable)} away from your first withdrawal.</div>`:""}
+    <button class="primary wide" ${canWithdraw?"":"disabled"} onclick="withdraw()">
+      Withdraw to UPI</button>
+  </div>
+
+  <div class="card">
+    <h3>Streak pot</h3>
+    <div class="row"><div class="big">${money(S.pot)}</div>
+      <div class="pill">${S.misses} miss${S.misses===1?"":"es"}</div></div>
+    <div class="bar"><i class="${S.pot>=30?"good":S.pot>=15?"warn":"bad"}"
+      style="width:${potPct}%;background:${S.pot>=30?"var(--good)":S.pot>=15?"var(--warn)":"var(--bad)"}"></i></div>
+    <div class="dim">
+      Credited in full on day 1. It shrinks when you miss, it never builds up.
+      ${nt!==null
+        ? `<b style="color:var(--warn)">${nt} more miss${nt===1?"":"es"} and this drops to ${money(potTier()===30?15:5)}.</b>`
+        : "You're at the floor for this cycle."}
+    </div>
+    <div class="dim" style="margin-top:6px">Grace tokens left: <b style="color:var(--ink)">${S.grace}</b> · Streak: <b style="color:var(--ink)">${S.streak}</b> days</div>
+  </div>
+
+  <div class="card">
+    <h3>Tomorrow's alarm</h3>
+    <div class="dim">Task and difficulty lock when you arm it. Rational you decides for sleepy you.</div>
+    <div class="grid" style="margin-top:10px">
+      <select ${S.alarmArmed?"disabled":""} onchange="S.alarmTask=this.value;draw()">
+        <option value="math" ${S.alarmTask==="math"?"selected":""}>Math — 3 in a row</option>
+        <option value="qr" ${S.alarmTask==="qr"?"selected":""}>Registered QR scan</option>
+        <option value="shake" ${S.alarmTask==="shake"?"selected":""}>Shake</option>
+      </select>
+      <select ${S.alarmArmed?"disabled":""} onchange="S.alarmDifficulty=this.value;draw()">
+        <option value="easy" ${S.alarmDifficulty==="easy"?"selected":""}>Easy</option>
+        <option value="normal" ${S.alarmDifficulty==="normal"?"selected":""}>Normal</option>
+        <option value="hard" ${S.alarmDifficulty==="hard"?"selected":""}>Hard</option>
+      </select>
+    </div>
+    ${S.alarmTask==="qr" ? `
+      <hr>
+      <div class="dim">Register a code in <b style="color:var(--ink)">another room</b> —
+      bathroom, kettle, fridge. Any-QR scanning is defeated by taping one to your nightstand.</div>
+      <input style="margin-top:8px" placeholder="e.g. BATHROOM-MIRROR-42"
+        value="${S.qrCode}" ${S.alarmArmed?"disabled":""}
+        oninput="S.qrCode=this.value.toUpperCase()">
+      ${S.qrCode?`<div class="dim" style="margin-top:6px;color:var(--good)">Registered: ${S.qrCode}</div>`:""}
+    `:""}
+    <button class="${S.alarmArmed?"":"primary"} wide" onclick="toggleArm()"
+      ${(S.alarmTask==="qr" && !S.qrCode && !S.alarmArmed)?"disabled":""}>
+      ${S.alarmArmed?"Disarm (unlocks the task choice)":"Arm alarm for 06:30 — locks the task"}
+    </button>
+  </div>
+
+  <div class="card">
+    <h3>Daily spin</h3>
+    <div class="dim">
+      Expected value about ${money(1)}, floor never zero.
+      ${S.alarmDoneToday
+        ? "Unlocked — you completed today's alarm."
+        : "<b style='color:var(--warn)'>Locked until you complete an alarm.</b> Every rupee traces to a real wake-up."}
+    </div>
+    <button class="wide ${S.alarmDoneToday && !S.spinUsedToday?"primary":""}"
+      ${S.alarmDoneToday && !S.spinUsedToday?"":"disabled"} onclick="spin()">
+      ${S.spinUsedToday?"Spun today — back tomorrow":"Spin"}
+    </button>
+  </div>
+
+  <div class="card">
+    <h3>Today's questions</h3>
+    ${S.dripDoneToday
+      ? `<div class="dim">Done for today. Three more tomorrow.</div>`
+      : `<div class="q">${DRIP_Q[S.dripIdx][0]}</div>
+         <div class="opts">${DRIP_Q[S.dripIdx][1].map(o=>`<button onclick="drip()">${o}</button>`).join("")}</div>
+         <div class="dim">${S.dripIdx+1} of ${DRIP_Q.length} · pays ${money(0.5)}</div>`}
+  </div>
+
+  <div class="card">
+    <h3>Reward shelf — no cash, no cap</h3>
+    <div class="shelf">
+      <div><b>Streak freeze</b><br><span class="dim">Owned: ${S.shelf.freeze}</span>
+        <button class="wide" onclick="buyShelf('freeze')">Claim</button></div>
+      <div><b>Premium sounds</b><br><span class="dim">${S.shelf.sounds?"Unlocked":"Locked"}</span>
+        <button class="wide" onclick="buyShelf('sounds')" ${S.shelf.sounds?"disabled":""}>Claim</button></div>
+      <div><b>Dark gold theme</b><br><span class="dim">${S.shelf.theme?"Unlocked":"Locked"}</span>
+        <button class="wide" onclick="buyShelf('theme')" ${S.shelf.theme?"disabled":""}>Claim</button></div>
+      <div><b>Wake-up buddy</b><br><span class="dim">${S.buddy?S.buddy:"Not paired"}</span>
+        <button class="wide" onclick="pair()">${S.buddy?"Unpair":"Pair"}</button></div>
+    </div>
+    <div class="dim" style="margin-top:8px">
+      These cost the business nothing and are valued most by the users who stay longest.
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Sponsored scans</h3>
+    <div class="dim">
+      Status: <b style="color:var(--warn)">dormant</b> — <code>sponsor_id = null</code>.
+      Every scan already carries a sponsor field and every reward a funding source.
+      When a brand signs, this is a config change, and their rupees sit
+      <b style="color:var(--ink)">outside</b> your ${money(CAP)} cap.
+    </div>
+  </div>`;
+}
+
+/* ============================ ACTIONS ============================ */
+window.toggleArm = function(){ S.alarmArmed = !S.alarmArmed; draw(); };
+
+window.withdraw = function(){
+  if (S.underReview){ toast("Payouts paused while your account is under review."); return; }
+  if (S.withdrawable < MIN_WITHDRAW){ toast("Minimum withdrawal is " + money(MIN_WITHDRAW)); return; }
+  const amt = S.withdrawable;
+  S.withdrawable = 0;
+  toast(money(amt) + " sent to UPI. Full balance, no monthly release limit.");
+  draw();
+};
+
+window.appeal = function(){
+  S.underReview = false;
+  toast("Appeal submitted. A human reviews it within 5 days.");
+  draw();
+};
+
+window.spin = function(){
+  const table = [[0.25,.40],[0.5,.30],[1,.20],[2,.07],[5,.025],[25,.005]];
+  let r = Math.random(), acc = 0, prize = 0.25;
+  for (const [v,p] of table){ acc += p; if (r <= acc){ prize = v; break; } }
+  S.spinUsedToday = true;
+  earn(prize, "daily spin");
+  draw();
+};
+
+window.drip = function(){
+  S.dripIdx++;
+  if (S.dripIdx >= DRIP_Q.length){ S.dripIdx = 0; S.dripDoneToday = true; earn(0.5, "daily questions"); }
+  draw();
+};
+
+window.buyShelf = function(k){
+  if (k==="freeze"){ S.shelf.freeze++; S.grace++; toast("Streak freeze claimed. Grace tokens now " + S.grace + "."); }
+  else { S.shelf[k] = true; toast("Unlocked. Costs nothing, counts for a lot."); }
+  draw();
+};
+
+window.pair = function(){
+  S.buddy = S.buddy ? null : "Riya (buddy)";
+  toast(S.buddy ? "Paired. Bonus pays only if you BOTH wake on time." : "Unpaired.");
+  draw();
+};
+
+/* ============================ ALARM ============================ */
+window.startAlarm = function(){
+  if (!S.alarmArmed){ toast("Arm the alarm first."); return; }
+  S.ringStart = Date.now(); S.windowLost = false;
+  S.mathGot = 0; newMath();
+  $("ring").classList.add("on","pulse");
+  window.scrollTo({top:0});   // a real alarm takes over the screen
+  drawTask();          // render the task ONCE
+  drawRing();
+  S.ringTimer = setInterval(drawRing, 200);
+};
+
+// The countdown ticks 5x a second. The task must NOT be re-rendered on that
+// tick, or every keystroke the user types is wiped before they can submit.
+function drawTask(){ $("task").innerHTML = taskHTML(); }
+
+function drawRing(){
+  const el = Date.now() - S.ringStart;
+  const left = Math.max(0, REWARD_WINDOW - el);
+  const w = $("rewardwin");
+  if (left > 0){
+    w.className = "window";
+    w.textContent = "Reward window: " + (left/1000).toFixed(1) + "s";
+  } else {
+    if (!S.windowLost){ S.windowLost = true; }
+    w.className = "window lost";
+    w.textContent = "Reward window closed — the alarm keeps ringing until you dismiss it";
+  }
+  if (el > MAX_RING){ // safety stop, PRD says 5 min
+    stopRing(false);
+    toast("Alarm auto-stopped after the maximum ring duration.");
+  }
+}
+
+function taskHTML(){
+  if (S.alarmTask === "math"){
+    return `<div class="card" style="margin:0">
+      <h3>Solve ${S.mathNeed} in a row — ${S.mathGot}/${S.mathNeed}</h3>
+      <div class="q">${S.mathA} + ${S.mathB} = ?</div>
+      <input id="mathin" inputmode="numeric" placeholder="answer" onkeydown="if(event.key==='Enter')checkMath()">
+      <button class="primary wide" onclick="checkMath()">Submit</button>
+    </div>`;
+  }
+  if (S.alarmTask === "qr"){
+    return `<div class="card" style="margin:0">
+      <h3>Scan your registered code</h3>
+      <div class="dim">Registered: <b style="color:var(--ink)">${S.qrCode}</b> — go to that room.</div>
+      <input id="qrin" placeholder="type the code you scanned" style="margin-top:8px">
+      <button class="primary wide" onclick="checkQR()">Submit scan</button>
+      <div class="dim" style="margin-top:6px">Any other code is rejected.</div>
+    </div>`;
+  }
+  return `<div class="card" style="margin:0">
+    <h3>Shake the phone</h3>
+    <div class="dim">Accelerometer on a real device. Desktop fallback below.</div>
+    <button class="primary wide" onclick="finishAlarm(true)">Shake detected (fallback)</button>
+  </div>`;
+}
+
+function newMath(){
+  const hard = S.alarmDifficulty === "hard", easy = S.alarmDifficulty === "easy";
+  const max = easy ? 9 : hard ? 99 : 30;
+  S.mathA = 2 + Math.floor(Math.random()*max);
+  S.mathB = 2 + Math.floor(Math.random()*max);
+}
+
+window.checkMath = function(){
+  const el = $("mathin"); if (!el) return;
+  if (parseInt(el.value,10) === S.mathA + S.mathB){
+    S.mathGot++;
+    if (S.mathGot >= S.mathNeed) return finishAlarm(true);
+    newMath();
+  } else {
+    S.mathGot = 0; newMath(); toast("Wrong — streak reset to 0.");
+  }
+  drawTask();
+};
+
+window.checkQR = function(){
+  const el = $("qrin"); if (!el) return;
+  if (el.value.trim().toUpperCase() === S.qrCode) return finishAlarm(true);
+  toast("That isn't your registered code.");
+};
+
+function finishAlarm(){
+  const inWindow = !S.windowLost;
+  stopRing(inWindow);
+}
+
+function stopRing(rewarded){
+  clearInterval(S.ringTimer); S.ringTimer = null;
+  $("ring").classList.remove("on","pulse");
+  S.alarmDoneToday = true;
+  S.alarmArmed = false;
+  if (rewarded){
+    S.streak++;
+    toast("Dismissed inside the reward window. Streak " + S.streak + ". Spin unlocked.");
+  } else {
+    S.misses++;
+    S.pot = potTier();
+    S.streak = 0;
+    toast("Dismissed after the window. Miss recorded — but you were still woken up.");
+  }
+  draw();
+}
+window.finishAlarm = finishAlarm;
+
+/* ============================ DEV BAR ============================ */
+function devbar(){
+  return `<b>DEV</b>
+    <button onclick="startAlarm()">Ring alarm</button>
+    <button onclick="S.surveyIdx=8;draw()">Skip to consent</button>
+    <button onclick="nextDay()">Next day</button>
+    <button onclick="nextCycle()">Next month</button>
+    <button onclick="S.earnedThisCycle=CAP;S.withdrawable=CAP;draw()">Hit cap</button>
+    <button onclick="S.underReview=true;draw()">Flag account</button>
+    <button onclick="S.misses=4;S.pot=potTier();draw()">4 misses</button>
+    <button onclick="reset()">Reset</button>`;
+}
+window.nextDay = function(){
+  S.day++; S.alarmDoneToday=false; S.spinUsedToday=false; S.dripDoneToday=false;
+  toast("Day " + S.day + ". Calendar-day reset at local midnight, not a 24-hour timer.");
+  draw();
+};
+window.nextCycle = function(){
+  S.day = 1; S.earnedThisCycle = 0; S.pot = POT_START; S.misses = 0;
+  S.alarmDoneToday=false; S.spinUsedToday=false; S.dripDoneToday=false;
+  toast("New cycle. Cap reset to " + money(CAP) + ", pot re-credited at " + money(POT_START) + ".");
+  draw();
+};
+window.reset = function(){ location.reload(); };
+
+/* ============================ RENDER ============================ */
+function draw(){
+  $("daypill").textContent = "Day " + S.day;
+  $("app").innerHTML = S.screen === "onboarding" ? renderOnboarding() : renderDashboard();
+  $("devbar").innerHTML = devbar();
+  $("sponsorslot").className = S.sponsorId ? "sponsor on" : "sponsor";
+}
+
+// real accelerometer where available; fallback button always present
+window.addEventListener("devicemotion", e => {
+  if (!S.ringTimer || S.alarmTask !== "shake") return;
+  const a = e.accelerationIncludingGravity;
+  if (!a) return;
+  if (Math.abs(a.x||0) + Math.abs(a.y||0) + Math.abs(a.z||0) > 40) finishAlarm(true);
+});
+
+draw();
+</script>
+</body>
+</html>

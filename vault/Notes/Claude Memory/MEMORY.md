@@ -25,6 +25,13 @@ Bijoy is building a one-person AI business that solves real business problems wi
 
 Before any build: due diligence and a market survey. This is a hard rule from him, not a suggestion.
 
+### AlarmX (first product)
+Android alarm app paying users cash for waking on time. Full detail in [[Notes/Business/AlarmX]]; design work in `apps/alarmx/`.
+
+The governing fact: the original ₹95/user/month payout loses ₹39.18 per active user per month against ₹23.42 of revenue. Launch cap is ₹20/month, raised only as measured ARPU proves it. Any future feature that pays users has to be checked against `economics/AlarmX-unit-economics.xlsx` before it ships.
+
+Three design flaws were caught and fixed before build: a 10-second alarm that auto-dismissed (now the alarm rings until dismissed and 10s is only the reward window), a withdrawal bottleneck that was a Play Store removal risk (now cap earning, pay out in full), and a fake "technical difficulty" message for flagged accounts (now an honest under-review state with appeals).
+
 ### WBCIL.com (day job)
 International marketing executive role. Client and customer facing. Outreach stack is Brevo plus Anymail Finder, which means the outreach rules in the rule bank apply directly here (`outreach-draft-only`, `outreach-no-em-dash`, `outreach-followup-timing`, `outreach-followup-short`).
 

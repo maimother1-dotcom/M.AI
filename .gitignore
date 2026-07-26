@@ -20,3 +20,6 @@ chroma/
 session-locks/
 dashboard/
 .DS_Store
+
+# AlarmX test artifacts
+apps/alarmx/tests/shots/

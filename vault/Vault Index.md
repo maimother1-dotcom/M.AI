@@ -22,6 +22,12 @@
 
 ---
 
+## Business
+
+- [[Notes/Business/AlarmX]] — Android alarm app that pays users to wake up. First product; economics, PRD and prototype in `apps/alarmx/`
+
+---
+
 ## Playbooks
 
 - [[Notes/Playbooks/Batch Planning Playbook]] — Plan a full week in one session
