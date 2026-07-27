@@ -1,11 +1,13 @@
 # AlarmX — Product Requirements Document
 
-**Version:** 0.5 · **Date:** 26th July 2026 · **Owner:** Bijoy Halder
+**Version:** 0.6 · **Date:** 26th July 2026 · **Owner:** Bijoy Halder
 **Status:** Spec agreed, pre-development
+
+**v0.6 changes — the largest so far. §2 is rewritten.** The fixed monthly cap is replaced by a **revenue share**: the user is paid a percentage of ad revenue that has already arrived and been verified server-side, so a loss on the reward line is structurally impossible rather than merely unlikely. The share rises with the streak (50/55/60%) instead of a fixed ₹30 pot (§4.2), the spin awards a share multiplier instead of rupee prizes (§4.3), and the monthly cap becomes a 20-view daily ceiling. New §4.7 daily math section and §4.8 Daily Close. New §8.3 makes AdMob SSV the only credit trigger. `build_model.py` now refuses to build if any scenario would lose money.
 
 **v0.5 changes:** ad placement policy (§4.6) — **no ad ever sits between the user and alarm dismissal**, with the allowed interstitial slots named. Rewarded video rises from 3 to 4 views per active day, lifting the base cap to ₹19.19. **The launch cap stays ₹15.** Revenue split now stated explicitly in §2: ads are 61% of base revenue.
 
-**v0.4 changes:** regional calendar and a 4×2 home-screen widget (§16) — Bengali panjika and Tamil daily calendar, computed from Swiss Ephemeris, with `bn` and `ta` added to the string table. It is the non-cash retention the ₹15 cap forces. Open questions renumbered to §17.
+**v0.4 changes:** regional calendar and a 4×2 home-screen widget (§16) — Bengali panjika and Tamil daily calendar, computed from Swiss Ephemeris, with `bn` and `ta` added to the string table. It is the non-cash retention a capped product forces. Open questions renumbered to §17.
 
 **v0.3 changes:** first payout drops to ₹10 (§6.2), launch cap drops to ₹15 (§2), Hinglish becomes the default language (§12), and the product is positioned for students and exam prep (§13). New India-specific engineering requirements in §11 and a trust section in §14.
 
@@ -28,50 +30,70 @@ Revenue comes from in-app advertising and from reselling aggregated survey data.
 
 ---
 
-## 2. The number that governs everything
+## 2. The mechanism that governs everything
 
-`economics/AlarmX-unit-economics.xlsx` models revenue per active user against payout. Results, per active user per month:
+**The user is paid a share of ad revenue that has already arrived.**
+
+Not a rate. Not a cap. A percentage of money already in the account, credited only against ad impressions the **server** has verified.
+
+| Condition | What happens |
+|---|---|
+| Ad served and verified server-side | User credited their share of its realised value |
+| No fill | Nothing credited, nothing owed |
+| eCPM halves | Payouts halve the same day, automatically |
+| Client claims a view the server did not see | Not credited |
+
+**This makes a loss on the reward line structurally impossible, not merely unlikely.** There is no forecast to be wrong about, because nothing is promised before the money exists.
+
+### Why the design changed
+
+Every earlier version of this product failed the same way: **a fixed promise made against variable revenue.** ₹95 a month. ₹0.50 a math. ₹2 a set. Each was a number chosen first and defended afterwards, and each one lost money the moment eCPM moved. Ad revenue is set by Google, not by us. A fixed payout against a moving income is a loss waiting for a bad month.
+
+A share cannot be wrong, because it is a fraction of whatever actually turns up.
+
+### The numbers
+
+Per active user per month, at the **highest** share tier — the worst case for the business:
 
 | | Conservative | **Base** | Optimistic |
 |---|---:|---:|---:|
-| Advertising revenue | ₹5.62 | **₹15.91** | ₹43.68 |
-| Survey resale revenue | ₹5.67 | **₹10.25** | ₹20.00 |
-| Total revenue | ₹11.29 | **₹26.16** | ₹63.68 |
-| Non-reward costs | ₹5.95 | **₹3.20** | ₹1.75 |
-| **Sustainable earning cap** | **₹2.09** | **₹19.19** | **₹69.98** |
+| Ad revenue | ₹10.55 | **₹32.38** | ₹103.08 |
+| Survey resale (retained in full) | ₹5.67 | **₹10.25** | ₹20.00 |
+| **User earns** | ₹6.33 | **₹19.43** | ₹61.85 |
+| **Per active day** | ₹0.32 | **₹0.75** | ₹2.06 |
+| Non-reward costs | ₹6.58 | ₹4.17 | ₹2.99 |
+| **PROFIT** | **+₹3.30** | **+₹19.03** | **+₹58.24** |
 
-**Advertising is the largest source — 61% of base revenue.** That does not make the model safe, it changes which input is load-bearing. Set the survey line to zero and ads alone give a cap of **₹10.08 at base and a negative cap in the Conservative column**, where ad revenue (₹5.62) does not even cover non-reward costs (₹5.95). The exposure moves from a survey price you can negotiate to eCPM and fill rate, which Google sets. Both still need real measurement.
+Profit is positive in **every** column at the **highest** share. If eCPM halved it stays positive in every column (+₹1.19 / +₹12.56 / +₹37.63), because the payout halves with it.
 
-The original design paid up to ₹95 per user per month (₹60 math + ₹30 streak + ₹5 signup). In the base case that loses **₹54.60 per active user per month**. The sensitivity grid shows the ₹95 row is negative at every revenue level tested, including ₹50/user/month — roughly double the base case.
+### The share ladder
 
-**Decision: the launch earning cap is ₹15 per user per month**, unchanged in v0.5 despite the ceiling rising to ₹19.19. The extra headroom is banked as margin, not spent. Four rewarded videos a day is an assumption, not a measurement, and raising the payout on the strength of an unmeasured assumption is precisely how the ₹95 design happened.
+| Streak | Share | Why |
+|---|---:|---|
+| Days 1–6 | **50%** | The base deal: half of what your attention earns |
+| Day 7+ | **55%** | Retention. Costs nothing that was not already earned. |
+| Day 30+ | **60%** | The worst case, and what profit is tested against |
+| Until lifetime ₹10 | **70%** | Acquisition spend (§6.2), gets the user to a real payout in ~11 days at base |
 
-### Why the cap fell from ₹20 to ₹15
+The share rises with loyalty and never with a promise. If ad revenue grows, earnings grow automatically and nobody has to be told a new number.
 
-The ₹10 first payout (§6.2) is not free, and the model prices it exactly. A lower first threshold means fewer users churn without ever cashing out, so **breakage falls from 40% to 25%**. Less breakage means more of what is accrued is genuinely paid, which raises real cash cost:
+### The monthly cap is gone
 
-| | v0.2 (₹30 first) | **v0.3 (₹10 first)** |
-|---|---:|---:|
-| Breakage | 40% | **25%** |
-| Sustainable cap | ₹21.65 | **₹16.75** |   <!-- v0.3 figures; v0.5 raises both, the −23% relationship holds -->
-| Cost of the decision | — | **−₹4.90/user/month (−23%)** |
+Replaced by a ceiling of **20 credited ad views per day**. Beyond that, XP only.
 
-That is the price of the trust position, paid knowingly. §6.2 explains why it is worth it.
+A monthly cap created the failure it was meant to prevent: a user hits it and the app pays nothing for the rest of the cycle, which is the opposite of retention. A daily ceiling bounds fraud and bounds promises without ever making the app go dead mid-month.
 
-### The cap is a config value, not a constant
+### The build gate
 
-It rises only when measured ARPU rises:
+`economics/build_model.py` **refuses to write the workbook** if any scenario, at any share tier, at half or a quarter of the assumed eCPM, would lose money. 36 combinations, checked on every build. The gate has been tested by deliberately breaking it.
 
-| Trigger | New cap |
-|---|---|
-| Launch | ₹15 |
-| 60 days of measured ARPU ≥ ₹30 | ₹20 |
-| 60 days of measured ARPU ≥ ₹40 | ₹30 |
-| First sponsored-QR partner live | Re-model; sponsor revenue is incremental |
+### What is still unproven
 
-**Read the Conservative column before getting comfortable.** At the low end of the published India eCPM range the cap is **₹2.09**, not ₹15. That is not pessimism — it is a realistic first-year outcome for an app with no traffic history. Do not scale spend until the base case is confirmed with real numbers.
+1. **Average sets completed per day** (§4.7). The revenue case leans on it and it has never been measured. It is deliberately where the uncertainty is parked, rather than hidden inside a rate.
+2. **Rewarded eCPM and fill rate for India Android.** Published benchmarks, not measurements. Open a real AdMob account before trusting the Base column.
+3. **Survey resale values.** Placeholders. Note the structural protection: the user is paid from **ad revenue only**, so a worthless survey line reduces profit and never the payout, and never below zero.
 
-The single most important thing this table says: **do not promise users an earning rate the ad revenue has not yet proven.** Every reward-app failure in this category starts by doing exactly that.
+**Read the Conservative column before getting comfortable.** ₹0.32 a day is what a first-year app with no traffic history should expect. It is still profitable, which is the point.
 
 ---
 
@@ -92,7 +114,7 @@ The original design rang the alarm for exactly 10 seconds and then auto-dismisse
 
 The jump-out-of-bed incentive is fully preserved. The risk of AlarmX causing a missed shift is removed.
 
-**This is why §4.6 forbids any ad in the dismissal path.** Nothing may be inserted between the alarm firing and the user being able to switch it off — an ad in that path undoes this section entirely.
+**This is why §4.6 forbids any ad in the dismissal path.** Nothing may be inserted between the alarm firing and the user being able to switch it off — an ad there undoes this section entirely. The daytime math section (§4.7) is a different surface, and is where the ads belong.
 
 ### 3.2 Dismissal tasks
 
@@ -132,36 +154,44 @@ Library of pleasant wake tones. Volume escalation curve configurable. Default re
 
 ### 4.1 Cash is the primary medium
 
-Cash converts installs immediately and AlarmX has no brand equity to trade on. Everything below is denominated in rupees and counts against the ₹15 monthly cap (§2).
+Cash converts installs immediately and AlarmX has no brand equity to trade on. Everything below is denominated in rupees and is paid from the revenue share in §2 — a fraction of ad money that has already arrived, never a fixed promise.
 
-### 4.2 Streak pot — inverted
+### 4.2 The streak is the share, not a pot
 
-Credit **₹30 into a locked pot on day 1** of each 30-day cycle. Decrement per miss. The user watches it shrink rather than watching zero grow.
+The original design credited **₹30 into a locked pot** on day 1 and decremented it per miss. Loss aversion is real and the psychology was right, but the number was a fixed promise against variable revenue — the exact failure §2 removes.
 
-Identical cost, materially better retention. Loss aversion runs roughly twice as strong as equivalent gain, and this change costs one afternoon of work.
+**Replaced by the share ladder.** The streak now buys a bigger cut of what the user's own attention earns:
 
-Final payout follows the agreed tiers:
+| Streak | Share | What the user sees |
+|---|---:|---|
+| Days 1–6 | 50% | "Half of what your ads earn" |
+| Day 7+ | 55% | "7 din — ab 55%" |
+| Day 30+ | 60% | "30 din — ab 60%" |
 
-| Misses in cycle | Pot pays |
-|---|---|
-| ≤ 4 | ₹30 |
-| 5–10 | ₹15 |
-| > 10 | ₹5 |
+A miss drops the streak and the share falls back a tier. **Same loss aversion, no fixed liability**: what is at risk is a percentage, and a percentage of a smaller number is still affordable.
 
-The pot UI must make the current bracket and the next threshold visible at all times — "2 more misses and this drops to ₹15" is the screen that drives daily opens.
+The UI keeps the original's best property — the current tier and the next threshold visible at all times. *"Kal 7 din ho jayenge → 55%"* is the screen that drives the daily open, and unlike a ₹30 pot it can never promise money that has not arrived.
 
-### 4.3 Daily spin, replacing the flat daily payout
+Grace tokens (§3.5) protect the streak, and therefore the tier, exactly as before.
 
-The original ₹1/₹2 flat daily math reward is replaced with a **spin**: probabilistic, non-zero floor, expected value ≈ ₹1.
+### 4.3 Daily spin — a share bonus, not a prize
 
-Variable reward outperforms a fixed payout per rupee spent by a wide margin. The floor is never ₹0, so it never reads as a loss.
+The original ₹1/₹2 flat daily reward is replaced with a **spin**, and under §2 the spin no longer hands out fixed rupee prizes. It awards a **one-day share multiplier** on what the user has already earned.
+
+| Outcome | Effect | Odds |
+|---|---|---:|
+| +5% share today | small | 40% |
+| +10% share today | typical | 30% |
+| +20% share today | good | 20% |
+| +40% share today | rare | 7% |
+| **Double share today** | jackpot | 3% |
+
+Variable reward outperforms a fixed payout by a wide margin, and the floor is never zero so it never reads as a loss. Crucially, **the multiplier applies to realised revenue**, so even a jackpot cannot pay out money that has not arrived — the build gate in §2 tests the highest tier including this.
 
 **The spin is gated behind a completed alarm that morning.** Two reasons, both load-bearing:
 
-1. It ties every rupee earned to a verified human event at a real time in a real place, which is the single best fraud control available.
+1. It ties every rupee to a verified human event at a real time in a real place — the single best fraud control available.
 2. It keeps the reward attached to a skill task rather than pure chance, which is the defensible side of Indian prize-draw law.
-
-Suggested distribution (tunable): ₹0.25 (40%), ₹0.50 (30%), ₹1 (20%), ₹2 (7%), ₹5 (2.5%), ₹25 (0.5%).
 
 ### 4.4 Non-cash reward shelf
 
@@ -213,7 +243,50 @@ Rewarded eCPM is $1.50 against $0.40 for interstitial, so an extra rewarded view
 
 Per §11, rewarded video on a metered connection spends the user's data. Show the approximate size before the view on a mobile connection, and never auto-play video outside Wi-Fi.
 
-### 4.7 Sponsored QR — rails built, dormant
+### 4.7 The daily math section — the daytime earning loop
+
+The alarm gets the user up once. This gets them back three more times.
+
+**Structure:** 5 sets of 4 questions, 20 a day. **One rewarded video after every 2 questions — 2 per set, 10 a day.** That is the ad ratio: roughly 30 seconds of video for two questions, not one ad per question.
+
+**Locked until the day's alarm is completed.** No alarm, no sets, no earning. Every rupee still traces to a real wake-up, which is the same rule the daily spin follows (§4.3). Without this, AlarmX becomes a math-for-cash app that happens to have an alarm, and the anti-farming controls get much harder.
+
+**Sets unlock in three tranches** — after the alarm, at midday, in the evening. One session becomes three. This is the actual retention mechanic; the money is the hook that gets it started.
+
+**Questions scale to the chosen exam** (§13). A NEET aspirant gets NEET-grade arithmetic. The loop then reads as revision rather than a chore, which is the difference between a habit and a task.
+
+**Reward:** each verified ad view credits the user's share (§2). Nothing is promised per question — the payout is a fraction of what the ads actually earned. At base that is ₹0.53 a day for three sets and ₹0.74 for all five.
+
+**What a set can pay, and why it is not ₹2.** Two rewarded views earn ₹0.21. That is the entire budget for one set. ₹2 a set would cost ₹260 per user per month against ₹27.46 of ad revenue — a loss of ₹232.54 per user, four times worse than the ₹95 design. The share mechanism removes the need to pick a number at all.
+
+**Anti-fraud.** Maths are scriptable, so this section inherits §7 in full: Play Integrity, response-time variance profiling (a bot solves in a suspiciously tight distribution), and the alarm gate capping the daily bounty per fake account. The 20-view daily ceiling (§2) bounds the rest.
+
+### 4.8 The Daily Close — the moment the user feels paid
+
+Every evening the app shows what was earned today, **with the receipt**:
+
+```
+Aaj: 10 ads dekhe  ->  ₹0.53 kamaye
+     Tumhara hissa: 50%     Streak: 6 din
+     Kal 7 din ho jayenge -> hissa 55% ho jayega
+```
+
+Three things it must always show: **how many verified views**, **the share applied**, and **the rupees**. The arithmetic is visible because the arithmetic is honest.
+
+Effort maps onto rupees where the user can see it:
+
+| Sets done | Verified views | Earned today |
+|---:|---:|---:|
+| 0 | 4 | ₹0.21 |
+| 1 | 6 | ₹0.32 |
+| 3 | 10 | ₹0.53 |
+| 5 | 14 | ₹0.74 |
+
+**Every reward app in this category hides this arithmetic, which is exactly why nobody believes them.** AlarmX can show its working because its working is honest. This is the single strongest trust asset in the product and it costs nothing to build.
+
+The Daily Close is also the third daily touch, and the one that closes the loop: wake up, earn through the day, see what you made.
+
+### 4.9 Sponsored QR — rails built, dormant
 
 The QR scan is currently a pure cost. It is also the most monetisable surface in the app: a verified human, awake, at home, holding a specific product, at a known time each morning. That is exactly what a CPG brand pays for.
 
@@ -224,7 +297,7 @@ The QR scan is currently a pure cost. It is also the most monetisable surface in
 - The dismissal UI has a sponsor badge slot, hidden while `sponsor_id` is null.
 - Payout attribution reports split by funding source from day 1.
 
-When the first partner signs, activation is a config change and a creative asset, not a rewrite. Sponsored scans are **incremental** to the ₹20 cap, not counted against it, because a different balance sheet funds them.
+When the first partner signs, activation is a config change and a creative asset, not a rewrite. Sponsored scans are **incremental** to the ad revenue share (§2), not counted against it, because a different balance sheet funds them.
 
 ---
 
@@ -265,17 +338,19 @@ This cuts legal exposure sharply at minimal revenue cost, since buyers of consum
 
 ---
 
-## 6. Wallet, cap and withdrawal
+## 6. Wallet and withdrawal
 
-### 6.1 Cap earning, not withdrawal
+### 6.1 Never throttle the withdrawal
 
 The original design let users accumulate ₹500–600 and released ₹60–100 per month.
 
 That is a Google Play deceptive-behaviour risk, and it is the specific mechanic that generates "they won't let you withdraw" reviews, which kill install conversion faster than any ASO work can repair.
 
-**Revised:** earning is capped at ₹20 per user per month. Everything earned is withdrawable **in full**, within 48 hours of request, once the ₹30 minimum is reached.
+**Revised: everything earned is withdrawable in full**, within 48 hours of request, once the threshold in §6.2 is reached. No monthly release limit, ever.
 
-Same cash leaving the business. Completely different trust position — "pays fast, pays real" is a genuine differentiator in a category where nobody believes anybody.
+Under the share mechanism (§2) this is easy to promise honestly, because **the money was already collected before it was credited.** There is no float to manage and no month where payouts exceed income — the payout is a fraction of income by construction. The original design needed a withdrawal throttle precisely because it had promised more than it earned.
+
+"Pays fast, pays real" is a genuine differentiator in a category where nobody believes anybody, and here it is a property of the arithmetic rather than a policy that could be quietly reversed.
 
 ### 6.2 Two thresholds: ₹10 first, ₹30 after
 
@@ -286,9 +361,9 @@ Same cash leaving the business. Completely different trust position — "pays fa
 
 **Why the first payout is an acquisition cost, not a reward.** ₹10 plus a ₹3 fee is ₹13 per converting user, or **₹9.10 blended across all installs**. A paid install in India costs around ₹22. So the first payout buys a *paid, retained, trusting* user for **41% of what an ad pays for a raw install that may never open the app twice.*
 
-That is the correct frame. Charging it to the reward budget would wrongly depress the cap in every subsequent month, for a cost that is structurally marketing.
+That is the correct frame. Charging it to the reward line would wrongly depress the share in every subsequent month, for a cost that is structurally marketing.
 
-**Why it was necessary at all.** At a ₹15 cap and a flat ₹30 minimum, a new user cannot be paid inside their first cycle — the first payout would land around six weeks in. Six weeks of "trust me" is exactly what every reward app that never pays also says. The whole honest-cap design in §6.1 depends on the user finding out quickly that the money is real. ₹10 buys that discovery in about two weeks.
+**Why it was necessary at all.** At a flat ₹30 minimum a new user cannot be paid inside their first cycle — the first payout would land around six weeks in. Six weeks of "trust me" is exactly what every reward app that never pays also says. The whole honesty position in §6.1 depends on the user finding out quickly that the money is real. ₹10 plus the 70% acquisition share (§2) buys that discovery in about eleven days at base.
 
 ### 6.3 Anti-farming gate on the first payout — required, not optional
 
@@ -306,12 +381,12 @@ Show the gate honestly in the UI, as progress rather than an obstacle: *"4 of 7 
 
 Monthly batch payouts, one per user per month, keeping transaction cost to a single fee. UPI ID collected with a name-match confirmation before the first payout is released.
 
-Users who churn below their threshold constitute **breakage**, modelled at 25% of accrued rewards in the base case. That is a legitimate consequence of a minimum, not a dark pattern, provided the cap is honest and the threshold is reachable — which at ₹15/month and a ₹10 first threshold it clearly is.
+Users who churn below their threshold constitute **breakage**, modelled at 25% of accrued rewards in the base case. That is a legitimate consequence of a minimum, not a dark pattern, provided the earning is honest and the threshold is reachable — which at a 70% acquisition share and a ₹10 first threshold it clearly is, about eleven days at base.
 
 ### 6.5 UI requirements
 
-- Wallet shows earned, withdrawable, and remaining monthly cap.
-- When the cap is hit: *"You've earned this month's maximum of ₹15. Your cap resets on 1 August."* Honest, no fake scarcity, no implication that more is coming.
+- Wallet shows earned, withdrawable, the current share tier, and today's verified ad views against the 20-view ceiling.
+- When the daily ceiling is hit: *"Aaj ke 20 ads ho gaye. Kal phir se — XP abhi bhi milega."* Honest, no fake scarcity, and the app does not go dead for the rest of the month the way a monthly cap made it.
 - Before the first payout, show both gates: the rupee distance **and** the 7-day progress. Whichever is further away is the one that matters.
 - Never display a balance the user cannot eventually withdraw.
 
@@ -354,7 +429,7 @@ Every rupee should trace to a completed alarm event. The detached daily challeng
 
 ### 7.6 First-payout farming
 
-The ₹10 first payout creates a per-account bounty and needs its own gate — Play Integrity, one payout per phone number and per device, and ≥7 distinct alarm-days. Specified in full in §6.3. This is the single highest-risk fraud surface in the product, because unlike the reward cap it is a one-off prize that resets with every new account.
+The ₹10 first payout creates a per-account bounty and needs its own gate — Play Integrity, one payout per phone number and per device, and ≥7 distinct alarm-days. Specified in full in §6.3. This is the single highest-risk fraud surface in the product, because unlike the revenue share it is a one-off prize that resets with every new account and is not backed by ad revenue that account generated.
 
 ---
 
@@ -382,9 +457,22 @@ Minimum SDK 26, target current. The React prototype in `prototype/` is a design 
 - A dedicated fraud-evaluation function on every reward event
 - Payout via a PSP (RazorpayX or Cashfree), server-side only, idempotent, with a settlement reconciliation job
 
-### 8.3 Hard rules
+### 8.3 Server-side ad verification — the mechanism, not a detail
 
-- Reward amounts, caps, and the spin distribution are **server-authoritative**. The client displays; it never decides.
+**The §2 guarantee lives or dies here.** The revenue share is only safe if a credit is impossible without an ad that genuinely paid.
+
+- **AdMob server-side verification (SSV) callback is the only credit trigger.** The client cannot credit a view, request a credit, or report a completion that counts. It renders the ad and reports nothing that touches the wallet.
+- Every SSV callback is **signature-verified** against Google's public keys before it is trusted, and the transaction ID is stored to make replay impossible.
+- Credits are keyed on `(user_id, ad_unit, ssv_transaction_id)` and are **idempotent**. The same callback arriving twice credits once.
+- The share tier applied is read **server-side** from the user's streak. The client never sends its own tier.
+- The **20-view daily ceiling** is enforced server-side, counted on verified callbacks, not on client-reported views.
+- Realised value comes from the reporting API, not from a hardcoded eCPM. **If the reported revenue is zero, the credit is zero** — that is the whole safety property.
+
+Assume the APK is decompiled on day one (security baseline). A user who fully controls the client must be able to gain **nothing** beyond what real, paid ad views earn them.
+
+### 8.4 Hard rules
+
+- Reward amounts, share tiers, ceilings, and the spin multiplier distribution are **server-authoritative**. The client displays; it never decides.
 - Every payout is idempotent, keyed on `(user_id, cycle, reward_id)`.
 - All transport TLS. No certificate pinning bypass, no debug flags in release.
 - Secrets in Cloud Functions config or Secret Manager, never in the APK. Assume the APK is decompiled on day one.
@@ -396,13 +484,13 @@ Minimum SDK 26, target current. The React prototype in `prototype/` is a design 
 
 | Risk | Severity | Mitigation |
 |---|---|---|
-| Ad ARPU comes in at the Conservative column, making the cap ~₹2 | **High** | Cap is a config value. Launch at ₹20 with a 60-day ARPU review before any raise. Do not scale spend until base case is confirmed. |
+| Ad ARPU comes in at the Conservative column | **Low, by construction** | The share falls with it automatically and the business stays profitable (+₹3.30/user/month). This risk was High under a fixed cap; the share mechanism is what demoted it. What remains is a *growth* risk, not a solvency one: do not scale spend until the base case is confirmed. |
 | Survey resale values are unvalidated placeholders | **High** | Get a signed indication from one buyer before counting the revenue. These are the least reliable inputs in the model. |
-| Play Store rejection under reward/deceptive policy | Medium | Honest cap, full withdrawal, no fake errors, clear disclosures. Pre-submission policy review. |
+| Play Store rejection under reward/deceptive policy | Medium | Full withdrawal with no throttle, no fake errors, no ad in the alarm path, and the Daily Close showing the actual arithmetic. Pre-submission policy review. |
 | DPDP enforcement on the resale consent | Medium | Optional survey, granular unticked consent, aggregate-only sale, documented retention. Legal review before launch. |
 | Fraud exceeding the 5% modelled leakage | Medium | Play Integrity as a hard gate, alarm-tied earning, shadow throttle, monthly leakage reporting against the model. |
 | Exact-alarm permission restrictions tightening in future Android | Medium | Monitor platform releases. Foreground-service fallback path. |
-| Users churn once they learn the cap is ₹15 | Medium | Honesty is the trade. A ₹15 cap that pays reliably retains better than a ₹95 promise that does not. The student wedge (§13) and non-cash rewards carry the rest — the money was never going to be the whole reason to stay. |
+| Users churn once they see the real daily figure (₹0.32–₹0.75) | Medium | Honesty is the trade, and the Daily Close (§4.8) shows the arithmetic rather than hiding it. A share that pays reliably and rises with the streak retains better than a ₹95 promise that does not. The student wedge (§13) and non-cash rewards carry the rest — the money was never going to be the whole reason to stay. |
 | **OEM battery killers stop alarms firing** | **High** | The single biggest technical risk. Per-OEM onboarding, post-onboarding verification, re-check on update, physical Redmi and Realme testing before release. See §11.1. |
 | First-payout farming at ₹10 per fake account | High | Play Integrity, one payout per number and device, ≥7 alarm-days. See §6.3. |
 | Hinglish copy reads as inauthentic | Low | Write it how people text, not translated English. Test the strings with real users in the segment before launch. |
@@ -500,13 +588,13 @@ Most Indian reward apps never pay. Users know this, and they arrive assuming Ala
 
 ### 14.1 Festivals and events
 
-Diwali, Holi, Eid, Pongal, and exam-season pushes. **Non-cash only** — themes, badges, bonus grace tokens, leaderboard events. Zero marginal cost, and it creates a reason to reopen without touching the cap.
+Diwali, Holi, Eid, Pongal, and exam-season pushes. **Non-cash only** — themes, badges, bonus grace tokens, leaderboard events. Zero marginal cost, and it creates a reason to reopen without touching the revenue share.
 
 ---
 
 ## 16. Regional calendar and the home-screen widget
 
-The ₹15 cap (§2) means engagement cannot be bought with money. AlarmX needs a daily reason to be opened that has nothing to do with rupees.
+Ad-funded earning (§2) is real but modest — ₹0.32 to ₹0.75 a day. AlarmX needs a daily reason to be opened that has nothing to do with rupees.
 
 Bengali panjika and Tamil daily calendar are checked every morning by millions of households. **That habit already exists — the widget does not have to create one, only occupy it.**
 
@@ -587,9 +675,9 @@ The widget is ambient and that is the point. One optional daily notification at 
 
 ### 16.8 Economics
 
-The widget pays no cash, so it does not touch the ₹15 cap. It is exactly the non-cash retention the cap forces.
+The widget pays no cash, so it does not touch the revenue share at all. It is exactly the non-cash retention a modest daily figure forces.
 
-It may raise active days per month (base case 26), which would raise revenue and the cap. **That is deliberately not baked into the model.** Raising a revenue assumption on the strength of an unshipped feature is how the ₹95 design happened in the first place. It is recorded as a candidate uplift to re-measure after 60 days of live data. The Swiss Ephemeris licence is a capitalised one-time cost, not a per-user cost.
+It may raise active days per month (base case 26), which would raise revenue and therefore earnings. **That is deliberately not baked into the model.** Raising a revenue assumption on the strength of an unshipped feature is how the ₹95 design happened in the first place. It is recorded as a candidate uplift to re-measure after 60 days of live data. The Swiss Ephemeris licence is a capitalised one-time cost, not a per-user cost.
 
 ---
 
@@ -602,7 +690,9 @@ It may raise active days per month (base case 26), which would raise revenue and
 5. Is 7 alarm-days the right anti-farming gate, or is 5 enough? Too long and genuine users lose the early trust moment the ₹10 exists to create. Tune against real fraud data after launch, not before.
 6. What does the exam-countdown ask look like for someone with no exam? The wedge must not make the app unusable for a working adult who installs it anyway.
 
-7. Does the widget actually move active days? It is the whole retention argument for §16 and it is unmeasured. Re-check after 60 days of live data, and only then consider raising the cap ladder.
+7. Does the widget actually move active days? It is the whole retention argument for §16 and it is unmeasured. Re-check after 60 days of live data.
+
+8. Does the Daily Close (§4.8) actually make ₹0.53 feel like earning? The whole motivation case rests on showing honest arithmetic rather than a big number. If it does not land, the answer is better framing, never a bigger promise.
 
 **Resolved in v0.4:** which regional languages come next (§12 — `bn` and `ta`, pulled in by the panjika rather than guessed from install geography).
 

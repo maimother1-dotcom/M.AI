@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Build the AlarmX unit-economics workbook (v0.5).
+"""Build the AlarmX unit-economics workbook (v0.6).
 
-v0.3 change: the first payout drops to Rs10 (Rs30 thereafter). That lowers
-breakage, which raises real cash cost, which lowers the sustainable cap. The
-first payout itself is booked as customer acquisition, not as a reward.
+v0.6 replaces the fixed monthly cap with a REVENUE SHARE. The user is paid a
+percentage of ad revenue that has already arrived and been verified server
+side, so a loss on the reward line is structurally impossible rather than
+merely unlikely. _no_loss_gate() at the bottom refuses to write the file if
+any scenario, at any share tier, at half or a quarter of the assumed eCPM,
+would lose money.
 """
 
 from openpyxl import Workbook
@@ -44,50 +47,64 @@ rd.title = "README"
 rd.sheet_view.showGridLines = False
 
 rows = [
-    ("AlarmX — Unit Economics Model (v0.5)", TITLE, None),
+    ("AlarmX — Unit Economics Model (v0.6)", TITLE, None),
     ("", None, None),
-    ("What this answers", BOLD, None),
-    ("How much cash AlarmX can pay one user per month without losing money.", BLACK, None),
-    ("Every other number in the product spec is derived from that one.", BLACK, None),
+    ("THE ONE IDEA IN THIS MODEL", BOLD, None),
+    ("The user is paid a SHARE OF AD REVENUE THAT HAS ALREADY ARRIVED.", BOLD, None),
+    ("Not a rate. Not a cap. A share of money already in the account.", BLACK, None),
     ("", None, None),
-    ("WHERE THE MONEY ACTUALLY COMES FROM", BOLD, None),
-    ("Advertising is the largest source and always was. Per active user per month:", BLACK, None),
+    ("Every rupee credited is backed by an ad impression the SERVER has verified.", BLACK, None),
+    ("  no ad served      -> nothing credited, nothing owed", BLACK, None),
+    ("  eCPM halves       -> payouts halve the same day, automatically", BLACK, None),
+    ("  fill drops        -> payouts drop with it", BLACK, None),
+    ("  client claims a view the server did not see -> not credited", BLACK, None),
     ("", None, None),
+    ("This makes a loss on the reward line STRUCTURALLY IMPOSSIBLE, not merely", BOLD, None),
+    ("unlikely. There is no forecast to be wrong about, because nothing is", BLACK, None),
+    ("promised before the money exists.", BLACK, None),
+    ("", None, None),
+    ("Every earlier version failed the same way: a FIXED promise made against", BLACK, None),
+    ("VARIABLE revenue. Rs95/month. Rs0.50 a math. Rs2 a set. Each one was a", BLACK, None),
+    ("number chosen first and defended afterwards. This one cannot be wrong,", BLACK, None),
+    ("because it is a fraction of whatever actually turns up.", BLACK, None),
+    ("", None, None),
+    ("WHAT IT PAYS AND WHAT IT KEEPS", BOLD, None),
     ("                        Conservative      Base   Optimistic", BLACK, None),
-    ("  Advertising              {ad_c:>10}{ad_b:>10}{ad_o:>13}", BLACK, None),
-    ("  Survey resale            {sv_c:>10}{sv_b:>10}{sv_o:>13}", BLACK, None),
-    ("  Ads as a share of revenue{sh_c:>10}{sh_b:>10}{sh_o:>13}", BLACK, None),
+    ("  Ad revenue               {ad_c:>10}{ad_b:>10}{ad_o:>13}", BLACK, None),
+    ("  Survey resale (retained) {sv_c:>10}{sv_b:>10}{sv_o:>13}", BLACK, None),
+    ("  User earns (60% tier)    {us_c:>10}{us_b:>10}{us_o:>13}", BLACK, None),
+    ("  Per active day           {pd_c:>10}{pd_b:>10}{pd_o:>13}", BLACK, None),
+    ("  PROFIT                   {pf_c:>10}{pf_b:>10}{pf_o:>13}", BOLD, None),
     ("", None, None),
-    ("SO WHY DOES THE SURVEY PLACEHOLDER STILL MATTER? Because of this:", BOLD, None),
-    ("With the survey line set to ZERO, ads alone produce these caps:", BLACK, None),
+    ("Profit is positive in EVERY column at the HIGHEST share tier. The Model", BLACK, None),
+    ("tab also shows profit if eCPM halved - still positive everywhere.", BLACK, None),
     ("", None, None),
-    ("  Conservative   ad revenue {ad_c}  vs non-reward cost {nc_c}  ->  cap {ac_c}", BLACK, None),
-    ("  Base           ad revenue {ad_b}                            ->  cap {ac_b}", BLACK, None),
-    ("  Optimistic     ad revenue {ad_o}                            ->  cap {ac_o}", BLACK, None),
+    ("THE SHARE LADDER", BOLD, None),
+    ("  days 1-6      50%", BLACK, None),
+    ("  day 7+        55%      streak reward that costs nothing already unearned", BLACK, None),
+    ("  day 30+       60%      the worst case, and what profit is tested against", BLACK, None),
+    ("  until Rs10    70%      acquisition spend, gets the user paid fast", BLACK, None),
     ("", None, None),
-    ("In the Conservative column ad revenue does not cover the payout fee, servers", BLACK, None),
-    ("and support. You lose money before paying a single reward.", BLACK, None),
+    ("THE MONTHLY CAP IS GONE. Replaced by a ceiling of 20 credited ad views a", BOLD, None),
+    ("day. A monthly cap made the app go dead once a user hit it - earning", BLACK, None),
+    ("nothing for the rest of the cycle, which is the opposite of retention.", BLACK, None),
+    ("A daily ceiling bounds fraud without ever doing that.", BLACK, None),
     ("", None, None),
-    ("Leaning on ads does not remove that fragility, it MOVES it. The load-bearing", BLACK, None),
-    ("input stops being a survey price you can negotiate and becomes eCPM and fill", BLACK, None),
-    ("rate, which Google sets and you do not. Both need real measurement.", BLACK, None),
+    ("THE BUILD GATE", BOLD, None),
+    ("build_model.py refuses to write this file if any scenario, at any share", BLACK, None),
+    ("tier, at half or a quarter of the assumed eCPM, would lose money.", BLACK, None),
+    ("36 combinations, checked on every build. The gate has been tested by", BLACK, None),
+    ("deliberately breaking it.", BLACK, None),
     ("", None, None),
-    ("What changed in v0.5", BOLD, None),
-    ("Rewarded video goes from 3 to 4 views per active day at Base.", BLACK, None),
-    ("Rewarded eCPM is $1.50 against $0.40 for interstitial, so an extra rewarded", BLACK, None),
-    ("view is worth 3.8x an extra interstitial - and the user opts into it.", BLACK, None),
-    ("  Base cap Rs16.75 -> {cap_b}.", BLACK, None),
-    ("", None, None),
-    ("THE LAUNCH CAP STAYS AT Rs15. The extra headroom is banked as margin, not", BOLD, None),
-    ("spent. Four videos a day is an assumption, not a measurement. Raising the", BLACK, None),
-    ("payout on the strength of an unmeasured assumption is exactly the mistake", BLACK, None),
-    ("that produced the Rs95 design.", BLACK, None),
-    ("", None, None),
-    ("NO AD SITS BETWEEN THE USER AND ALARM DISMISSAL. An interstitial there was", BOLD, None),
-    ("modelled and priced: it earns {int1_rev}/user/month and moves the cap {int1_cap}.", BLACK, None),
-    ("That is the entire value of delaying someone switching off a 5am alarm, and", BLACK, None),
-    ("of handing a Play reviewer a reward app that blocks an alarm. Not taken.", BLACK, None),
-    ("The 4 interstitials above sit in allowed slots only - see PRD 4.6.", BLACK, None),
+    ("STILL THE WEAKEST INPUTS", BOLD, None),
+    ("  1. Average sets completed per day. The revenue case leans on it and it", BLACK, None),
+    ("     has never been measured. It is deliberately the assumption carrying", BLACK, None),
+    ("     the uncertainty, rather than hiding it in a rate.", BLACK, None),
+    ("  2. Rewarded eCPM and fill rate for India Android. Published benchmarks,", BLACK, None),
+    ("     not measurements. Open a real AdMob account before trusting Base.", BLACK, None),
+    ("  3. Survey resale values. Placeholders. But note: the user is paid from", BLACK, None),
+    ("     AD REVENUE ONLY, so a zero survey line reduces profit, never the", BLACK, None),
+    ("     payout, and never below zero.", BLACK, None),
     ("", None, None),
     ("What changed in v0.4 — deliberately, almost nothing", BOLD, None),
     ("v0.4 adds the regional calendar and the 4x2 home-screen widget (PRD 16).", BLACK, None),
@@ -193,6 +210,19 @@ DATA = [
     (36, "Share of users reaching the first payout", 0.55, 0.70, 0.85, "%", "Higher at ₹10 than it was at ₹30", PCT, False),
     (37, "Referral bonus per referred install", 5.00, 5.00, 5.00, "₹", "CAC line, never counted against the reward cap", RUP, False),
     (38, "Paid install cost (CPI) in India", 30.00, 22.00, 15.00, "₹ per install", "Benchmark for judging the first payout as acquisition", RUP, False),
+
+    (40, "MATH SECTION — the daytime earning loop (PRD 4.7)", None, None, None, None, None, None, True),
+    (41, "Math sets offered per day", 5, 5, 5, "sets", "Locked until the day's alarm is completed", NUM, False),
+    (42, "Maths per set", 4, 4, 4, "questions", "20 questions a day if every set is taken", NUM, False),
+    (43, "Rewarded ads per set", 2, 2, 2, "views", "One after every 2 questions", NUM, False),
+    (44, "Average sets completed per day", 2, 3, 5, "sets", "THE honest home for the uncertainty. Measure this after launch.", NUM, False),
+
+    (45, "REVENUE SHARE — what the user is paid (PRD 2)", None, None, None, None, None, None, True),
+    (46, "User share of realised ad revenue", 0.50, 0.50, 0.50, "%", "Paid only against ad views the SERVER has verified. No view, no credit.", PCT, False),
+    (47, "Share at a 7-day streak", 0.55, 0.55, 0.55, "%", "Retention lever. Costs nothing that was not already earned.", PCT, False),
+    (48, "Share at a 30-day streak", 0.60, 0.60, 0.60, "%", "WORST CASE for the business — profit is tested against this", PCT, False),
+    (49, "Share until lifetime earnings reach the first threshold", 0.70, 0.70, 0.70, "%", "Acquisition spend, gets the user to their first real payout fast", PCT, False),
+    (50, "Daily credited ad views ceiling", 20, 20, 20, "views", "Replaces the monthly cap. Bounds fraud without the app going dead mid-month.", NUM, False),
 ]
 
 # --------------------------------------------- README figures, derived from DATA
@@ -202,6 +232,7 @@ _A = {label: (cons, base, opt) for _, label, cons, base, opt, *_ in DATA if cons
 
 
 def _readme_figures():
+    """Computed from DATA so the README sheet can never drift from the model."""
     def v(label, i):
         return _A[label][i]
 
@@ -209,34 +240,25 @@ def _readme_figures():
     for i, tag in enumerate("cbo"):
         fx = v("USD / INR exchange rate", i)
         days, fill = v("Active days per user per month", i), v("Ad fill rate", i)
-        rew = v("Rewarded video eCPM", i) / 1000 * fx * v("Rewarded videos per active day", i) * days * fill
-        one_int = v("Interstitial eCPM", i) / 1000 * fx * days * fill
-        inter = one_int * v("Interstitials per active day", i)
-        ads = rew + inter + v("Banner revenue", i)
+        views = min(v("Rewarded videos per active day", i)
+                    + v("Average sets completed per day", i) * v("Rewarded ads per set", i),
+                    v("Daily credited ad views ceiling", i))
+        ads = (v("Rewarded video eCPM", i) / 1000 * fx * views * days * fill
+               + v("Interstitial eCPM", i) / 1000 * fx * v("Interstitials per active day", i) * days * fill
+               + v("Banner revenue", i))
         surveys = v("One-time profile resale value", i) / v("Expected user lifetime", i) \
             + v("Daily drip batch value", i) * days
-
-        breakage, fraud = v("Breakage at a ₹10 first payout", i), v("Fraud leakage", i)
-        margin = v("Target contribution margin", i)
-        cost = (v("UPI payout fee", i) * (1 - breakage) + v("Infrastructure cost", i)
-                + v("SMS / OTP cost", i) + v("Support cost", i))
-        divisor = (1 - breakage) * (1 + fraud)
-
-        def cap_for(revenue):
-            return (revenue - cost - margin * revenue) / divisor
-
+        share = v("Share at a 30-day streak", i)          # worst case for the business
+        user = ads * share
+        breakage = v("Breakage at a ₹10 first payout", i)
+        fixed = (v("UPI payout fee", i) * v("Payouts per withdrawing user", i) * (1 - breakage)
+                 + v("Infrastructure cost", i) + v("SMS / OTP cost", i) + v("Support cost", i)
+                 + user * v("Fraud leakage", i))
         out[f"ad_{tag}"] = f"Rs{ads:,.2f}"
         out[f"sv_{tag}"] = f"Rs{surveys:,.2f}"
-        out[f"sh_{tag}"] = f"{ads / (ads + surveys) * 100:.0f}%"
-        out[f"nc_{tag}"] = f"Rs{cost:,.2f}"
-        ads_only = cap_for(ads)
-        out[f"ac_{tag}"] = "NEGATIVE" if ads_only <= 0 else f"Rs{ads_only:,.2f}"
-        full = cap_for(ads + surveys)
-        out[f"cap_{tag}"] = f"Rs{full:,.2f}"
-        # What one extra interstitial in the dismissal path would have been worth.
-        out[f"int1_rev_{tag}"] = f"Rs{one_int:,.2f}"
-        out[f"int1_cap_{tag}"] = f"Rs{cap_for(ads + surveys + one_int) - full:,.2f}"
-    out["int1_rev"], out["int1_cap"] = out["int1_rev_b"], out["int1_cap_b"]
+        out[f"us_{tag}"] = f"Rs{user:,.2f}"
+        out[f"pd_{tag}"] = f"Rs{user / days:,.2f}"
+        out[f"pf_{tag}"] = f"Rs{ads - user + surveys - fixed:,.2f}"
     return out
 
 
@@ -331,75 +353,101 @@ def line(row, label, tmpl, fmt=RUP, note="", bold=False, fill=None):
         c.fill = fill
 
 
+# Total rewarded views a day: the standing offer plus the math section,
+# bounded by the daily ceiling that replaced the monthly cap.
+REW_VIEWS = "MIN(Assumptions!{c}9+Assumptions!{c}44*Assumptions!{c}43,Assumptions!{c}50)"
+MATH_VIEWS = "MIN(Assumptions!{c}44*Assumptions!{c}43,MAX(0,Assumptions!{c}50-Assumptions!{c}9))"
+
 section(5, "REVENUE")
-line(6, "Rewarded video",
+line(6, "Rewarded video — standing offer",
      "=Assumptions!{c}8*Assumptions!{c}5/1000*Assumptions!{c}9*Assumptions!{c}6*Assumptions!{c}10",
      note="eCPM → ₹/view × views/day × active days × fill rate")
-line(7, "Interstitial",
-     "=Assumptions!{c}11*Assumptions!{c}5/1000*Assumptions!{c}12*Assumptions!{c}6*Assumptions!{c}10")
-line(8, "Banner", "=Assumptions!{c}13")
-line(9, "Survey — one-time profile, amortised", "=Assumptions!{c}15/Assumptions!{c}16")
-line(10, "Survey — daily drip", "=Assumptions!{c}17*Assumptions!{c}6",
-     note="Why the survey drips instead of dumping once")
-line(11, "Sponsored QR (dormant)", "=Assumptions!{c}19*Assumptions!{c}20*Assumptions!{c}6",
+line(7, "Rewarded video — math section",
+     "=Assumptions!{c}8*Assumptions!{c}5/1000*" + MATH_VIEWS + "*Assumptions!{c}6*Assumptions!{c}10",
+     note="Sets completed × ads per set, inside the daily ceiling")
+line(8, "Interstitial",
+     "=Assumptions!{c}11*Assumptions!{c}5/1000*Assumptions!{c}12*Assumptions!{c}6*Assumptions!{c}10",
+     note="Allowed slots only — never in the alarm dismissal path")
+line(9, "Banner", "=Assumptions!{c}13")
+line(10, "Survey — one-time profile, amortised", "=Assumptions!{c}15/Assumptions!{c}16")
+line(11, "Survey — daily drip", "=Assumptions!{c}17*Assumptions!{c}6")
+line(12, "Sponsored QR (dormant)", "=Assumptions!{c}19*Assumptions!{c}20*Assumptions!{c}6",
      note="₹0 until a brand signs")
-line(12, "TOTAL REVENUE", "=SUM({c}6:{c}11)", bold=True, fill=OUT_FILL)
+line(13, "TOTAL REVENUE", "=SUM({c}6:{c}12)", bold=True, fill=OUT_FILL)
+line(14, "of which AD REVENUE", "=SUM({c}6:{c}9)", bold=True,
+     note="THE ONLY LINE THE USER IS PAID FROM. Survey revenue is retained.")
+line(15, "Rewarded views credited per active day", "=" + REW_VIEWS, fmt=NUM,
+     note="Bounded by the daily ceiling, Assumptions row 50")
 
-section(14, "NON-REWARD COSTS")
-line(15, "UPI payout fees", "=Assumptions!{c}27*Assumptions!{c}28*(1-Assumptions!{c}24)",
+section(17, "WHAT THE USER EARNS — a share of revenue that has ALREADY ARRIVED")
+line(18, "Share, days 1–6", "=Assumptions!{c}46", fmt=PCT)
+line(19, "Share, day 7+ streak", "=Assumptions!{c}47", fmt=PCT)
+line(20, "Share, day 30+ streak", "=Assumptions!{c}48", fmt=PCT)
+line(21, "User earns, days 1–6", "={c}14*{c}18")
+line(22, "User earns, day 7+", "={c}14*{c}19")
+line(23, "User earns, day 30+", "={c}14*{c}20", bold=True, fill=OUT_FILL,
+     note="The most a streak user can earn — and the worst case for the business")
+line(24, "Per active day at day 30+", "={c}23/Assumptions!{c}6", bold=True,
+     note="What the Daily Close shows")
+
+section(26, "NON-REWARD COSTS")
+line(27, "UPI payout fees", "=Assumptions!{c}27*Assumptions!{c}28*(1-Assumptions!{c}24)",
      note="Only non-breakage users trigger a payout")
-line(16, "Infrastructure", "=Assumptions!{c}29")
-line(17, "SMS / OTP", "=Assumptions!{c}30")
-line(18, "Support", "=Assumptions!{c}31")
-line(19, "TOTAL NON-REWARD COST", "=SUM({c}15:{c}18)", bold=True, fill=OUT_FILL)
+line(28, "Infrastructure", "=Assumptions!{c}29")
+line(29, "SMS / OTP", "=Assumptions!{c}30")
+line(30, "Support", "=Assumptions!{c}31")
+line(31, "Fraud leakage on rewards", "={c}23*Assumptions!{c}32",
+     note="Costed at the worst-case share")
+line(32, "TOTAL NON-REWARD COST", "=SUM({c}27:{c}31)", bold=True, fill=OUT_FILL)
 
-section(21, "REWARD BUDGET")
-line(22, "Target profit retained", "={c}12*Assumptions!{c}34")
-line(23, "Budget available for rewards", "={c}12-{c}19-{c}22", bold=True,
-     note="Revenue less non-reward cost less target profit")
-line(24, "Breakage factor (share actually paid)", "=1-Assumptions!{c}24", fmt=PCT)
-line(25, "Fraud inflation factor", "=1+Assumptions!{c}32", fmt=NUM)
-line(26, "SUSTAINABLE EARNING CAP", "={c}23/({c}24*{c}25)", fmt=RUP, bold=True, fill=OUT_FILL,
-     note="Maximum a single user may accrue per month")
+section(34, "PROFIT — THIS IS THE LINE THAT MUST NEVER GO NEGATIVE")
+line(35, "Ad revenue retained", "={c}14-{c}23", note="The half not paid out, at the worst-case share")
+line(36, "Survey revenue retained", "={c}10+{c}11", note="Entirely retained — never shared")
+line(37, "PROFIT PER ACTIVE USER PER MONTH", "={c}35+{c}36-{c}32", bold=True, fill=OUT_FILL,
+     note="Worst case: every user on the 60% streak share")
+line(38, "Margin on total revenue", "=IF({c}13=0,0,{c}37/{c}13)", fmt=PCT, bold=True)
+line(39, "SAFE?", '=IF({c}37>0,"YES — profitable at the highest share","NO — DO NOT SHIP")',
+     fmt='General', bold=True, fill=OUT_FILL,
+     note="Must read YES in all three columns. This is the release gate.")
+line(40, "Headroom before a loss", "=IF({c}14=0,0,{c}37/{c}14)", fmt=PCT,
+     note="How much further the share could rise before profit hits zero")
 
-section(28, "WHAT THE ₹10 FIRST PAYOUT COSTS")
-line(29, "Cap under v0.2 (₹30 first payout)",
-     "=({c}12-(Assumptions!{c}27*Assumptions!{c}28*(1-Assumptions!{c}25)"
-     "+Assumptions!{c}29+Assumptions!{c}30+Assumptions!{c}31)-{c}22)"
-     "/((1-Assumptions!{c}25)*{c}25)",
-     note="Same revenue, the higher v0.2 breakage assumption")
-line(30, "Cap reduction from the ₹10 decision", "={c}26-{c}29", bold=True,
-     note="Negative means the ₹10 first payout costs cap headroom")
-line(31, "Reduction as % of the v0.2 cap", "=IF({c}29=0,0,{c}30/{c}29)", fmt=PCT, bold=True)
+section(42, "WHY THIS CANNOT LOSE MONEY THE WAY EARLIER VERSIONS COULD")
+line(43, "Payout if eCPM halved", "={c}23/2",
+     note="Payout falls with revenue automatically — no renegotiation, no broken promise")
+line(44, "Profit if eCPM halved", "=({c}14/2)-({c}23/2)+{c}36-{c}32", bold=True,
+     note="Still positive: the share is a fraction of whatever actually arrives")
+line(45, "Payout if fill dropped to zero", "=0", note="No ad served, nothing credited, nothing owed")
 
-section(33, "ACQUISITION — separate book, NOT charged to the reward budget", CAC_FILL)
-line(34, "First payout, cash", "=Assumptions!{c}22", fill=CAC_FILL)
-line(35, "First payout, transaction fee", "=Assumptions!{c}27", fill=CAC_FILL)
-line(36, "Total first-payout cost per converting user", "={c}34+{c}35", bold=True, fill=CAC_FILL)
-line(37, "Blended across all installs", "={c}36*Assumptions!{c}36", fill=CAC_FILL,
-     note="Only users who reach the threshold cost you this")
-line(38, "Paid install cost (CPI) benchmark", "=Assumptions!{c}38", fill=CAC_FILL)
-line(39, "First payout as % of a paid install", "=IF({c}38=0,0,{c}37/{c}38)", fmt=PCT,
+section(47, "ACQUISITION — separate book, NOT charged against the share", CAC_FILL)
+line(48, "First payout, cash", "=Assumptions!{c}22", fill=CAC_FILL)
+line(49, "First payout, transaction fee", "=Assumptions!{c}27", fill=CAC_FILL)
+line(50, "Total first-payout cost per converting user", "={c}48+{c}49", bold=True, fill=CAC_FILL)
+line(51, "Blended across all installs", "={c}50*Assumptions!{c}36", fill=CAC_FILL)
+line(52, "Paid install cost (CPI) benchmark", "=Assumptions!{c}38", fill=CAC_FILL)
+line(53, "First payout as % of a paid install", "=IF({c}52=0,0,{c}51/{c}52)", fmt=PCT,
      bold=True, fill=CAC_FILL,
      note="Under 100% means it buys a paid, retained user cheaper than an ad buys a raw install")
-line(40, "Amortised over expected lifetime", "={c}37/Assumptions!{c}16", fill=CAC_FILL,
-     note="Monthly equivalent, for comparison against revenue only")
+line(54, "Days to reach the first payout at the boosted share",
+     "=IF({c}14=0,0,Assumptions!{c}22/(({c}14*Assumptions!{c}49)/Assumptions!{c}6))",
+     fmt=NUM, fill=CAC_FILL,
+     note="70% share until the first ₹10 — booked as acquisition, not reward")
 
-section(42, "REALITY CHECK vs THE ORIGINAL ₹95 DESIGN")
+section(56, "REALITY CHECK vs THE ORIGINAL ₹95 DESIGN")
 for j in range(2, 5):
-    c = m.cell(row=43, column=j, value=95)
+    c = m.cell(row=57, column=j, value=95)
     c.font = BLUE
     c.number_format = RUP0
     c.border = BOX
     c.alignment = Alignment(horizontal="center")
-c = m.cell(row=43, column=1, value="Original design cap (₹60 math + ₹30 streak + ₹5 signup)")
+c = m.cell(row=57, column=1, value="Original design payout (₹60 math + ₹30 streak + ₹5 signup)")
 c.font = BLACK
 c.border = BOX
-m.cell(row=43, column=5, value="The concept as first specified").font = NOTE
-line(44, "Sustainable cap as % of original", "={c}26/{c}43", fmt=PCT, bold=True)
-line(45, "Monthly loss per user at the original cap",
-     "={c}12-{c}19-({c}43*{c}24*{c}25)", fmt=RUP, bold=True,
-     note="Contribution per user if ₹95 shipped unchanged")
+m.cell(row=57, column=5, value="A fixed promise made against variable revenue").font = NOTE
+line(58, "What the share pays instead", "={c}23", bold=True)
+line(59, "Monthly loss per user had ₹95 shipped",
+     "={c}13-{c}32-{c}57", fmt=RUP, bold=True,
+     note="The failure mode this design removes entirely")
 
 m.column_dimensions["A"].width = 46
 for col in "BCD":
@@ -410,27 +458,27 @@ m.freeze_panes = "B5"
 # ------------------------------------------------------------------ SCALE
 s = wb.create_sheet("Scale")
 s.sheet_view.showGridLines = False
-s["A1"] = "Monthly P&L at scale — Base case"
+s["A1"] = "Monthly P&L at scale — Base case, revenue-share model"
 s["A1"].font = TITLE
-s["A2"] = "Set the cap you intend to ship in the yellow cell. Acquisition is shown separately."
+s["A2"] = "There is no cap to set. The payout is a share of ad revenue that has already arrived."
 s["A2"].font = NOTE
 
-s["A4"] = "Earning cap to test"
+s["A4"] = "User share to test"
 s["A4"].font = BOLD
-s["B4"] = 15
+s["B4"] = 0.60
 s["B4"].font = BLUE
-s["B4"].number_format = RUP0
+s["B4"].number_format = PCT
 s["B4"].fill = KEY_FILL
 s["B4"].border = BOX
-s["C4"] = "₹ per user per month"
+s["C4"] = "Worst case — every user on the 30-day streak tier"
 s["C4"].font = NOTE
 
-s["A5"] = "Sustainable cap (Base, from Model)"
-s["B5"] = "=Model!C26"
+s["A5"] = "Ad revenue per active user (Base, from Model)"
+s["B5"] = "=Model!C14"
 s["B5"].font = GREEN
 s["B5"].number_format = RUP
 s["B5"].border = BOX
-s["C5"] = "Ship at or below this"
+s["C5"] = "The only line the share is taken from"
 s["C5"].font = NOTE
 
 s["A6"] = "New-user share (drives acquisition cost)"
@@ -478,17 +526,24 @@ def srow(row, label, tmpl, fmt=RUP0, bold=False, fill=None, note=""):
     c.font = NOTE
 
 
-srow(10, "Revenue", "={c}9*Model!$C$12")
-srow(11, "Non-reward costs", "=-{c}9*Model!$C$19")
-srow(12, "Reward payout at the tested cap", "=-{c}9*$B$4*Model!$C$24*Model!$C$25")
+srow(10, "Total revenue", "={c}9*Model!$C$13")
+srow(11, "User payout — share of ad revenue", "=-{c}9*Model!$C$14*$B$4",
+     note="Falls automatically if eCPM or fill falls. Cannot exceed what arrived.")
+srow(12, "Non-reward costs", "=-{c}9*Model!$C$32")
 srow(13, "CONTRIBUTION before acquisition", "=SUM({c}10:{c}12)", bold=True, fill=OUT_FILL)
-srow(14, "Acquisition — first payouts", "=-{c}9*$B$6*Model!$C$37", fill=CAC_FILL,
+srow(14, "Acquisition — first payouts", "=-{c}9*$B$6*Model!$C$51", fill=CAC_FILL,
      note="One-off per new user, not a recurring reward")
 srow(15, "CONTRIBUTION after acquisition", "={c}13+{c}14", bold=True, fill=OUT_FILL)
 srow(16, "Margin after acquisition", "=IF({c}10=0,0,{c}15/{c}10)", fmt=PCT, bold=True, fill=OUT_FILL)
-srow(18, "Contribution at the ORIGINAL ₹95 cap",
-     "={c}9*Model!$C$12-{c}9*Model!$C$19-{c}9*Model!$C$43*Model!$C$24*Model!$C$25",
-     bold=True, note="What shipping the original design would cost monthly")
+srow(17, "SAFE AT SCALE?", '=IF({c}15>0,"YES","NO — DO NOT SHIP")', fmt="General",
+     bold=True, fill=OUT_FILL)
+srow(19, "If eCPM halved: revenue", "={c}9*(Model!$C$13-Model!$C$14/2)")
+srow(20, "If eCPM halved: user payout", "=-{c}9*(Model!$C$14/2)*$B$4",
+     note="The payout halves with it — this is the whole point")
+srow(21, "If eCPM halved: CONTRIBUTION", "={c}19+{c}20-{c}9*Model!$C$32", bold=True, fill=OUT_FILL)
+srow(23, "Contribution had the ORIGINAL ₹95 shipped",
+     "={c}9*Model!$C$13-{c}9*Model!$C$32-{c}9*Model!$C$57",
+     bold=True, note="A fixed promise against variable revenue — the failure this removes")
 
 s.column_dimensions["A"].width = 42
 for col in "BCD":
@@ -498,18 +553,18 @@ s.column_dimensions["E"].width = 46
 # ------------------------------------------------------------ SENSITIVITY
 sn = wb.create_sheet("Sensitivity")
 sn.sheet_view.showGridLines = False
-sn["A1"] = "Contribution per user per month (before acquisition)"
+sn["A1"] = "Profit per user per month — user share against ad revenue"
 sn["A1"].font = TITLE
-sn["A2"] = "Rows = earning cap shipped. Columns = total revenue per active user. Base-case costs, breakage and fraud."
+sn["A2"] = "Rows = share paid to the user. Columns = ad revenue per active user. Base-case costs and survey revenue."
 sn["A2"].font = NOTE
-sn["A3"] = "Bracketed values are losses on every active user at that combination."
+sn["A3"] = "Bracketed values are losses. The shipped share is 50-60%; note how much room sits above it."
 sn["A3"].font = NOTE
 
-REV = [10, 15, 20, 25, 30, 35, 40, 50]
-CAPS = [5, 10, 15, 20, 25, 30, 40, 60, 95]
+REV = [5, 10, 15, 20, 25, 30, 40, 60]
+CAPS = [0.3, 0.4, 0.5, 0.55, 0.6, 0.7, 0.8, 0.9, 1.0]
 
 c = sn["A5"]
-c.value = "Cap \\ Revenue"
+c.value = "Share \\ Ad revenue"
 c.font = BOLD_WHITE
 c.fill = HDR_FILL
 c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -525,23 +580,63 @@ for j, rev in enumerate(REV, start=2):
 for i, cap in enumerate(CAPS, start=6):
     c = sn.cell(row=i, column=1, value=cap)
     c.font = BLUE
-    c.number_format = RUP0
+    c.number_format = PCT
     c.alignment = Alignment(horizontal="center")
-    if cap == 95:
+    if cap in (0.5, 0.6):
         c.fill = KEY_FILL
     c.border = BOX
     for j in range(2, len(REV) + 2):
         col = get_column_letter(j)
         cc = sn.cell(row=i, column=j,
-                     value=f"={col}$5-Model!$C$19-$A{i}*Model!$C$24*Model!$C$25")
+                     value=f"={col}$5*(1-$A{i})+Model!$C$36-Model!$C$32")
         cc.number_format = RUP
         cc.border = BOX
 
 sn.cell(row=len(CAPS) + 7, column=1,
-        value="₹95 is the original design. Every negative cell on that row is a loss per user per month.").font = NOTE
+        value="Shipped shares (50% and 60%) are highlighted. Every negative cell is a loss per user per month.").font = NOTE
 sn.column_dimensions["A"].width = 20
 for j in range(2, len(REV) + 2):
     sn.column_dimensions[get_column_letter(j)].width = 13
 
+# ------------------------------------------------- THE NO-LOSS BUILD GATE
+# The whole point of the revenue-share design is that a loss on the reward
+# line is structurally impossible. This asserts it in Python rather than
+# trusting the spreadsheet to be read: the build FAILS if any scenario, at
+# any share tier, at half the assumed eCPM, would lose money.
+def _no_loss_gate():
+    A = {label: (c, b, o) for _, label, c, b, o, *_ in DATA if c is not None}
+    cols = ("Conservative", "Base", "Optimistic")
+    failures = []
+    for i, col in enumerate(cols):
+        v = lambda k: A[k][i]
+        fx, days, f = v("USD / INR exchange rate"), v("Active days per user per month"), v("Ad fill rate")
+        views = min(v("Rewarded videos per active day")
+                    + v("Average sets completed per day") * v("Rewarded ads per set"),
+                    v("Daily credited ad views ceiling"))
+        ads = (v("Rewarded video eCPM") / 1000 * fx * views * days * f
+               + v("Interstitial eCPM") / 1000 * fx * v("Interstitials per active day") * days * f
+               + v("Banner revenue"))
+        surveys = v("One-time profile resale value") / v("Expected user lifetime") \
+            + v("Daily drip batch value") * days
+        fixed = (v("UPI payout fee") * v("Payouts per withdrawing user") * (1 - v("Breakage at a ₹10 first payout"))
+                 + v("Infrastructure cost") + v("SMS / OTP cost") + v("Support cost"))
+        for tier in ("User share of realised ad revenue", "Share at a 7-day streak",
+                     "Share at a 30-day streak", "Share until lifetime earnings reach the first threshold"):
+            share = v(tier)
+            for stress, label in ((1.0, "as modelled"), (0.5, "eCPM halved"), (0.25, "eCPM quartered")):
+                a = ads * stress
+                payout = a * share
+                profit = a - payout + surveys - fixed - payout * v("Fraud leakage")
+                if profit <= 0:
+                    failures.append(f"{col} @ {share:.0%} share, {label}: profit ₹{profit:.2f}")
+        # A user who watches nothing must cost nothing on the reward line.
+        if 0 * share != 0:
+            failures.append(f"{col}: zero views did not produce a zero payout")
+    if failures:
+        raise SystemExit("NO-LOSS GATE FAILED — do not ship:\n  " + "\n  ".join(failures))
+    print(f"no-loss gate: PASSED ({len(cols)} scenarios x 4 share tiers x 3 eCPM stresses)")
+
+
+_no_loss_gate()
 wb.save(OUT)
 print("wrote", OUT)

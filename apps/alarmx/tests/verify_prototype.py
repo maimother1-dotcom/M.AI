@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AlarmX prototype v0.4 — browser verification.
+"""AlarmX prototype v0.6 — browser verification.
 
 Walks the golden and error paths and asserts the behaviours the PRD depends on.
 Run:  python3 verify_prototype.py
@@ -184,17 +184,93 @@ with sync_playwright() as p:
     pg.evaluate("S.exam='neet';draw()"); pg.wait_for_timeout(120)
 
     # ----------------------------------------------------------------- CAP
-    section("EARNING CAP: ₹15, honest, enforced")
-    check("cap constant is ₹15", pg.evaluate("CAP") == 15)
-    pg.click(".devbar button:has-text('Cap')"); pg.wait_for_timeout(250)
-    dash = pg.inner_text("#app")
+    section("THE MECHANISM: paid a share of revenue that already arrived (PRD 2)")
+    pg.evaluate("S.ledger=[];S.withdrawable=0;S.lifetimeEarned=20;S.streak=0;S.day=1;draw()")
+    pg.wait_for_timeout(150)
+
+    # THE load-bearing check of the entire design. In production the only
+    # credit trigger is AdMob's signed SSV callback (PRD 8.3).
     before = pg.evaluate("S.withdrawable")
-    pg.evaluate("earn(10,'test')"); pg.wait_for_timeout(150)
-    check("earning beyond the cap is refused", pg.evaluate("S.withdrawable") == before)
-    low = dash.lower()
+    pg.evaluate("creditAdView('math', false)"); pg.wait_for_timeout(120)
+    check("AN UNVERIFIED AD VIEW CREDITS NOTHING",
+          pg.evaluate("S.withdrawable") == before,
+          "no verification, no money — this is the whole safety property")
+    check("the failed view is still recorded, not silently dropped",
+          pg.evaluate("S.ledger.length") == 1
+          and pg.evaluate("S.ledger[0].verified") is False)
+
+    pg.evaluate("creditAdView('math', true)"); pg.wait_for_timeout(120)
+    credited = pg.evaluate("S.withdrawable") - before
+    check("a verified view credits exactly the share of its realised value",
+          abs(credited - 0.1056 * 0.50) < 1e-9, f"₹{credited:.4f}")
+    check("the ledger records gross, share and credit for the receipt",
+          pg.evaluate("S.ledger[1].gross") > 0
+          and pg.evaluate("S.ledger[1].pct") == 0.5
+          and pg.evaluate("S.ledger[1].credit") > 0)
+
+    section("SHARE TIERS: loyalty raises the cut, never the promise")
+    for streak, want in ((0, 0.50), (7, 0.55), (30, 0.60)):
+        pg.evaluate(f"S.streak={streak};S.lifetimeEarned=20")
+        check(f"streak {streak}d pays {want:.0%}", pg.evaluate("shareTier().pct") == want,
+              str(pg.evaluate("shareTier().pct")))
+    pg.evaluate("S.lifetimeEarned=2")
+    check("below the first threshold the share is boosted to 70%",
+          pg.evaluate("shareTier().pct") == 0.70,
+          "acquisition spend, gets the user to a real payout fast")
+    pg.evaluate("S.lifetimeEarned=20;S.streak=0")
+
+    section("NO LOSS IS POSSIBLE: the payout follows the revenue down")
+    zero = pg.evaluate("""(() => {
+        S.ledger=[]; S.withdrawable=0; S.fillFailure=true;
+        for (let i=0;i<20;i++) creditAdView('math');
+        const w = S.withdrawable; S.fillFailure=false; return w;
+    })()""")
+    check("total fill failure pays exactly ₹0", zero == 0, f"₹{zero}")
+    check("and the app says so honestly rather than failing silently",
+          pg.evaluate("S.ledger.filter(e => !e.verified).length") == 20)
+    halved = pg.evaluate("""(() => {
+        S.ledger=[]; S.withdrawable=0; S.day=1;
+        for (let i=0;i<10;i++) creditAdView('math', true);
+        return S.withdrawable;
+    })()""")
+    full = pg.evaluate("""(() => {
+        S.ledger=[]; S.withdrawable=0; S.day=2;
+        for (let i=0;i<20;i++) creditAdView('math', true);
+        return S.withdrawable;
+    })()""")
+    check("half the views pay half the money — the payout tracks revenue",
+          abs(halved * 2 - full) < 1e-9, f"₹{halved:.3f} vs ₹{full:.3f}")
+
+    section("DAILY CEILING replaces the monthly cap (PRD 2)")
+    pg.evaluate("S.ledger=[];S.withdrawable=0;S.day=3")
+    pg.evaluate("for(let i=0;i<40;i++) creditAdView('math', true)")
+    check("the ceiling holds at 20 credited views a day",
+          pg.evaluate("viewsToday()") == 20, str(pg.evaluate("viewsToday()")))
+    check("views beyond the ceiling credit nothing",
+          abs(pg.evaluate("earnedToday()") - 20 * 0.1056 * 0.5) < 1e-9)
+
+    # The failure a monthly cap creates: the app going dead mid-month.
+    sim = pg.evaluate("""(() => {
+        S.ledger=[]; S.withdrawable=0; S.lifetimeEarned=20; S.streak=30;
+        let paidDays = 0;
+        for (let d=1; d<=26; d++){
+            S.day = d;
+            let before = S.withdrawable;
+            for (let v=0; v<14; v++) creditAdView('math', true);
+            if (S.withdrawable > before) paidDays++;
+        }
+        return { paidDays, total: S.withdrawable };
+    })()""")
+    check("a full 26-day month pays on EVERY day — the app never goes dead",
+          sim["paidDays"] == 26, f"{sim['paidDays']}/26 days paid")
+    check("26 days at the top tier stays a sane monthly figure",
+          15 < sim["total"] < 40, f"₹{sim['total']:.2f}/month")
+    pg.evaluate("S.ledger=[];S.day=1;S.streak=0;draw()"); pg.wait_for_timeout(150)
+
+    dash = pg.inner_text("#app")
     check("no withheld-balance dark patterns",
-          all(x not in low for x in ["unlock next month", "monthly withdrawal limit",
-                                     "withdrawal limit", "released next month"]))
+          all(x not in dash.lower() for x in ["unlock next month", "monthly withdrawal limit",
+                                              "withdrawal limit", "released next month"]))
 
     # ------------------------------------------------- FIRST PAYOUT + GATE
     section("FIRST PAYOUT: ₹10 threshold behind a 7-day gate")
@@ -418,6 +494,92 @@ with sync_playwright() as p:
     check("data cost is disclosed on the offer",
           "MB" in pg.inner_text("[data-ad-where='offer']"))
     pg.evaluate("S.rewardedToday=0;draw()"); pg.wait_for_timeout(150)
+
+    # ------------------------------------------------ MATH SECTION + CLOSE
+    section("MATH SECTION: locked behind the alarm (PRD 4.7)")
+    pg.evaluate("S.ledger=[];S.withdrawable=0;S.lifetimeEarned=20;S.streak=0;S.day=1;"
+                "S.alarmDoneToday=false;S.setsDone=0;S.tranche=0;S.mathInSet=0;S.setAdsSeen=0;"
+                "S.fillFailure=false;S.screen='math';draw()")
+    pg.wait_for_timeout(200)
+    check("maths are LOCKED until the day's alarm is completed",
+          pg.evaluate("mathOpen()") is False,
+          "every rupee stays tied to a real wake-up")
+    check("the lock is explained, not just enforced",
+          "alarm" in pg.inner_text("#app").lower())
+    check("no question is reachable while locked",
+          pg.evaluate("!document.getElementById('mathin')"))
+
+    pg.evaluate("S.alarmDoneToday=true;draw()"); pg.wait_for_timeout(200)
+    check("completing the alarm unlocks the section", pg.evaluate("mathOpen()") is True)
+    check("structure is 5 sets of 4 with 2 ads per set",
+          pg.evaluate("MATH_SETS") == 5 and pg.evaluate("MATHS_PER_SET") == 4
+          and pg.evaluate("ADS_PER_SET") == 2)
+    check("sets unlock in tranches, not all at once",
+          pg.evaluate("setsUnlocked()") == 1, str(pg.evaluate("setsUnlocked()")))
+    pg.screenshot(path=str(SHOT / "16-math-section.png"), full_page=True)
+
+    section("MATH SECTION: one ad after every 2 questions")
+    def solve():
+        pg.fill("#mathin", str(pg.evaluate("S.mq.a + S.mq.b")))
+        pg.click("#app button.primary")
+        pg.wait_for_timeout(120)
+    solve()
+    check("a correct answer advances without an ad", pg.evaluate("S.mathInSet") == 1
+          and pg.evaluate("!document.getElementById('mathad')"))
+    solve()
+    check("an ad is required after the 2nd question",
+          pg.evaluate("!!document.getElementById('mathad')"),
+          "2 ads per set of 4 — PRD 4.7")
+    slots = pg.evaluate("[...document.querySelectorAll('[data-ad-slot]')].map(e=>e.dataset.adWhere)")
+    check("the math ad slot is tagged like every other ad surface",
+          "mathSet" in slots, ", ".join(slots))
+    w0 = pg.evaluate("S.withdrawable")
+    pg.click("#mathad"); pg.wait_for_timeout(200)
+    check("watching it credits the user's share of what it earned",
+          abs((pg.evaluate("S.withdrawable") - w0) - 0.1056 * 0.5) < 1e-9,
+          f"₹{pg.evaluate('S.withdrawable') - w0:.4f}")
+    solve(); solve()
+    check("finishing 4 questions completes the set", pg.evaluate("S.setsDone") == 1)
+    check("the next tranche is not open yet",
+          pg.evaluate("S.setsDone >= setsUnlocked()"))
+    pg.evaluate("S.tranche=1;draw()"); pg.wait_for_timeout(150)
+    check("advancing the tranche opens more sets", pg.evaluate("setsUnlocked()") == 3)
+
+    section("MATH SECTION: a failed ad pays nothing, and says so")
+    pg.evaluate("S.fillFailure=true;S.mathInSet=2;S.setAdsSeen=0;draw()"); pg.wait_for_timeout(200)
+    w1 = pg.evaluate("S.withdrawable")
+    pg.click("#mathad"); pg.wait_for_timeout(250)
+    check("no fill credits ₹0", pg.evaluate("S.withdrawable") == w1)
+    check("and it is recorded honestly in the ledger",
+          pg.evaluate("S.ledger[S.ledger.length-1].verified") is False)
+    pg.evaluate("S.fillFailure=false")
+
+    section("DAILY CLOSE: the receipt is computed, never typed (PRD 4.8)")
+    pg.evaluate("go('close')"); pg.wait_for_timeout(250)
+    close = pg.inner_text("#app")
+    check("it shows how many verified ads were watched",
+          str(pg.evaluate("S.ledger.filter(e=>e.day===S.day&&e.verified).length")) in close)
+    check("it shows the share applied", "%" in close)
+    check("it shows the rupees", "₹" in close)
+    ledger_total = pg.evaluate("earnedToday()")
+    shown = pg.evaluate("""() => {
+        const rows = [...document.querySelectorAll('.receipt .tot span')];
+        return rows.length ? rows[rows.length-1].textContent : '';
+    }""")
+    check("the total on screen equals the ledger total",
+          shown.replace("₹", "").replace(",", "") == f"{ledger_total:.2f}",
+          f"screen {shown} vs ledger ₹{ledger_total:.2f}")
+    check("failed views are shown, not hidden",
+          pg.evaluate("S.ledger.some(e=>!e.verified)") is False
+          or "0" in close)
+    check("the share ladder and next tier are visible",
+          pg.locator(".ladder div").count() == 3)
+    pg.screenshot(path=str(SHOT / "15-daily-close.png"), full_page=True)
+
+    section("SPIN: a share multiplier, never a fixed prize (PRD 4.3)")
+    pg.evaluate("S.screen='dashboard';draw()"); pg.wait_for_timeout(150)
+    check("no hardcoded rupee prize table remains in the spin copy",
+          "₹25" not in pg.inner_text("#app"))
 
     # ------------------------------------------- WIDGET AND REGIONAL CALENDAR
     section("WIDGET: 4x2 proportions, two tap targets, midnight rollover (PRD 16.4)")

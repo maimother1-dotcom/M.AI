@@ -11,24 +11,32 @@ Dismissing the alarm requires an active task — shake, math, or scanning a regi
 
 Revenue: in-app advertising plus resale of aggregated survey data. A third line, brand-sponsored QR scans, is designed in but switched off until partnerships exist.
 
-## The number that governs everything
+## The mechanism that governs everything
 
-The unit economics model is the spine of this project.
+**The user is paid a share of ad revenue that has already arrived.** Not a rate, not a cap — a percentage of money already in the account, credited only against ad views the server has verified.
+
+No ad served, nothing credited. eCPM halves, payouts halve the same day. A client that claims a view the server did not see gets nothing.
+
+**That makes a loss on the reward line structurally impossible rather than merely unlikely.** There is no forecast to be wrong about, because nothing is promised before the money exists.
+
+Every earlier version failed the same way: a fixed promise against variable revenue. ₹95 a month, ₹0.50 a math, ₹2 a set — each a number picked first and defended afterwards, each one loss-making the moment eCPM moved.
 
 | Per active user / month | Conservative | **Base** | Optimistic |
 |---|---:|---:|---:|
-| Advertising | ₹5.62 | **₹15.91** | ₹43.68 |
-| Survey resale | ₹5.67 | **₹10.25** | ₹20.00 |
-| Total revenue | ₹11.29 | **₹26.16** | ₹63.68 |
-| Sustainable earning cap | ₹2.09 | **₹19.19** | ₹69.98 |
+| Ad revenue | ₹10.55 | **₹32.38** | ₹103.08 |
+| User earns (top tier) | ₹6.33 | **₹19.43** | ₹61.85 |
+| Per active day | ₹0.32 | **₹0.75** | ₹2.06 |
+| **Profit** | **+₹3.30** | **+₹19.03** | **+₹58.24** |
 
-**Ads are 61% of base revenue — the largest source.** That does not make it safe, it moves where the risk sits. Zero the survey line and ads alone give ₹10.08 at base and a *negative* cap in the Conservative column, where ad revenue does not cover the payout fee, servers and support. The load-bearing input stops being a survey price you can negotiate and becomes eCPM and fill rate, which Google sets.
+Positive in every column at the highest share, and still positive everywhere if eCPM halved.
 
-The original concept paid up to **₹95/user/month**. Base case, that loses **₹54.60 per active user per month**. Sensitivity testing shows ₹95 is loss-making at every revenue level tested, including ₹50/user/month.
+**The share ladder:** 50% days 1–6, 55% at a 7-day streak, 60% at 30 days, 70% until the first ₹10 (acquisition — brings the first payout to about 11 days). Loyalty raises the cut; nothing raises the promise.
 
-**Launch cap: ₹15/month**, unchanged in v0.5 even though the ceiling rose to ₹19.19. The headroom is banked as margin, not spent. Documented ladder for raising it only as measured ARPU proves out.
+**The monthly cap is gone**, replaced by 20 credited ad views a day. A monthly cap created the failure it was meant to prevent — a user hits it and the app pays nothing for the rest of the cycle. The test suite simulates 26 days and asserts every one of them pays.
 
-The two weakest inputs are the survey resale values. They are placeholders and need validating with a real buyer before anyone counts that revenue.
+**The build gate:** `build_model.py` refuses to write the workbook if any scenario, at any share tier, at half or a quarter of the assumed eCPM, would lose money. 36 combinations on every build, and the gate has been tested by deliberately breaking it.
+
+The two weakest inputs are now stated rather than hidden: average sets completed per day, and real eCPM and fill for India Android. Both need measuring, and neither can produce a loss if wrong.
 
 ## Three changes that de-risked the concept
 
@@ -84,9 +92,15 @@ What made it decidable was pricing it rather than arguing about it: that ad earn
 
 **Rewarded video goes from 3 to 4 per active day.** Rewarded eCPM is $1.50 against $0.40 for interstitial, so an extra rewarded view is worth 3.8x an extra interstitial — and the user opts into it. Base cap ₹16.75 → ₹19.19. The format that respects the user is also the one that pays more.
 
+## The daily loop
+
+Three touches, one habit. **Morning:** the alarm, which unlocks the day. **Through the day:** 5 sets of 4 questions with one rewarded video after every 2 — locked until the alarm is done, so every rupee still traces to a real wake-up. Sets unlock in three tranches, turning one session into three. **Evening:** the Daily Close.
+
+The Daily Close is the best idea in the design. It shows what was earned today with the receipt — how many verified views, what share, how many rupees. Every reward app in this category hides that arithmetic, which is exactly why nobody believes them. AlarmX can show its working because its working is honest, and the receipt is computed from the ledger rather than typed.
+
 ## Status
 
-Economics modelled, PRD at v0.5, prototype built and tested — **230 checks passing** (173 browser, 38 astronomy, 19 cross-validation). The engine gets Puthandu, Poila Boishakh and Thai Pongal right across two years, including the sunset rule that moves Pongal from the 14th to the 15th in 2027.
+Economics modelled, PRD at v0.6, prototype built and tested — **265 checks passing** (208 browser, 38 astronomy, 19 cross-validation). The suite proves the safety property directly: an unverified view credits nothing, a total fill failure pays ₹0, half the views pay half the money, and a 26-day month pays on every day. The engine gets Puthandu, Poila Boishakh and Thai Pongal right across two years, including the sunset rule that moves Pongal from the 14th to the 15th in 2027.
 
 Not started: native Android build, PSP integration, brand partnerships, backend fraud service. Not verified: the 60-date almanac cross-check, every drik date that is not the new year, every tithi and nakshatra, and the Tamil 60-year cycle spellings.
 

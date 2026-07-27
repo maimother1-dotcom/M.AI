@@ -4,7 +4,7 @@ An Android alarm app that pays students cash for waking up early to study.
 
 Built for India first: Hinglish by default, designed around the phones and network conditions the target user actually has, and positioned for NEET / JEE / UPSC / board-exam preparation.
 
-This directory holds the design work — the economics that set the reward ceiling, the spec a developer builds from, and a clickable prototype of every mechanic.
+This directory holds the design work — the economics that make a loss impossible, the spec a developer builds from, and a clickable prototype of every mechanic.
 
 ---
 
@@ -12,57 +12,89 @@ This directory holds the design work — the economics that set the reward ceili
 
 | Path | What it is |
 |---|---|
-| `economics/AlarmX-unit-economics.xlsx` | The model that sets the earning cap. **Read this first.** |
+| `economics/AlarmX-unit-economics.xlsx` | The model, and the no-loss gate. **Read this first.** |
 | `economics/build_model.py` | Rebuilds the workbook from source |
 | `PRD.md` | Full product spec |
 | `prototype/index.html` | Interactive prototype. Open in a browser, no setup. |
 | `prototype/i18n.js` | Every user-facing string, in five locales |
 | `prototype/panchang.js` | Regional calendar engine — tithi, nakshatra, three Bengali/Tamil calendar systems |
-| `tests/verify_prototype.py` | 173-check browser suite |
+| `tests/verify_prototype.py` | 208-check browser suite |
 | `tests/verify_panchang.js` | 38-check astronomy suite, runs in node |
 | `tests/verify_bengali_cross.js` | 19-check cross-validation against two independent Bengali calendar implementations |
 | `tests/reference/` | Frozen reference data and its provenance |
 
 ---
 
-## Start here: the number
+## Start here: the mechanism
 
-| Per active user / month | Conservative | **Base** | Optimistic |
+**The user is paid a share of ad revenue that has already arrived.**
+
+Not a rate. Not a cap. A percentage of money already in the account, credited only against ad impressions the **server** has verified.
+
+| Condition | What happens |
+|---|---|
+| Ad served and verified server-side | User credited their share of its realised value |
+| No fill | Nothing credited, nothing owed |
+| eCPM halves | Payouts halve the same day, automatically |
+| Client claims a view the server did not see | Not credited |
+
+**This makes a loss on the reward line structurally impossible, not merely unlikely.** There is no forecast to be wrong about, because nothing is promised before the money exists.
+
+Every earlier version of this product failed the same way: **a fixed promise made against variable revenue.** ₹95 a month. ₹0.50 a math. ₹2 a set. Each was a number picked first and defended afterwards, and each lost money the moment eCPM moved. A share cannot be wrong, because it is a fraction of whatever actually turns up.
+
+### The numbers
+
+Per active user per month, at the **highest** share tier — the worst case for the business:
+
+| | Conservative | **Base** | Optimistic |
 |---|---:|---:|---:|
-| Advertising | ₹5.62 | **₹15.91** | ₹43.68 |
-| Survey resale | ₹5.67 | **₹10.25** | ₹20.00 |
-| Total revenue | ₹11.29 | **₹26.16** | ₹63.68 |
-| Sustainable earning cap | ₹2.09 | **₹19.19** | ₹69.98 |
+| Ad revenue | ₹10.55 | **₹32.38** | ₹103.08 |
+| Survey resale (retained in full) | ₹5.67 | **₹10.25** | ₹20.00 |
+| **User earns** | ₹6.33 | **₹19.43** | ₹61.85 |
+| **Per active day** | ₹0.32 | **₹0.75** | ₹2.06 |
+| **PROFIT** | **+₹3.30** | **+₹19.03** | **+₹58.24** |
 
-**Advertising is the largest source — 61% of base revenue.** That does not make the model safe, it moves where the risk sits. Zero out the survey line and ads alone give a cap of **₹10.08 at base, and a negative cap in the Conservative column**, where ad revenue (₹5.62) does not cover non-reward costs (₹5.95). The load-bearing input stops being a survey price you can negotiate and becomes eCPM and fill rate, which Google sets. Both still need real measurement.
+Positive in **every** column at the **highest** share. If eCPM halved it is still positive everywhere (+₹1.19 / +₹12.56 / +₹37.63), because the payout halves with it.
 
-The original concept paid up to **₹95/user/month**. Base case, that loses **₹54.60 per active user per month**. The sensitivity grid shows ₹95 is loss-making at every revenue level tested, including ₹50/user/month — more than double the base case.
+### The share ladder
 
-**The launch cap is ₹15/month**, unchanged even though the ceiling rose to ₹19.19 in v0.5. The extra headroom is banked as margin, not spent — four rewarded videos a day is an assumption, not a measurement.
+| Streak | Share |
+|---|---:|
+| Days 1–6 | **50%** |
+| Day 7+ | **55%** |
+| Day 30+ | **60%** |
+| Until lifetime ₹10 | **70%** (acquisition — first payout in ~11 days at base) |
 
-**Read the Conservative column before getting comfortable.** At the low end of the published India eCPM range the cap is ₹2.09, not ₹15. That is a realistic first-year outcome for an app with no traffic history, not a pessimism exercise.
+The share rises with loyalty and never with a promise. If ad revenue grows, earnings grow automatically and nobody has to be told a new number.
 
-The two least reliable inputs are the survey resale values. They are placeholders, not sourced, and should be validated with a real data buyer before anyone counts that revenue.
+### The monthly cap is gone
+
+Replaced by a ceiling of **20 credited ad views per day**. A monthly cap created the failure it was meant to prevent: a user hits it and the app pays nothing for the rest of the cycle. The test suite simulates 26 days and asserts **every one of them pays**.
+
+### The build gate
+
+`economics/build_model.py` **refuses to write the workbook** if any scenario, at any share tier, at half or a quarter of the assumed eCPM, would lose money. 36 combinations on every build. The gate has been tested by deliberately breaking it.
+
+```
+$ python3 build_model.py
+no-loss gate: PASSED (3 scenarios x 4 share tiers x 3 eCPM stresses)
+```
+
+### What is still unproven
+
+1. **Average sets completed per day.** The revenue case leans on it and it has never been measured. It is deliberately where the uncertainty is parked, rather than hidden inside a rate.
+2. **Rewarded eCPM and fill rate for India Android.** Published benchmarks, not measurements.
+3. **Survey resale values.** Placeholders — but the user is paid from **ad revenue only**, so a worthless survey line reduces profit, never the payout, and never below zero.
 
 ---
 
-## The ₹10 first payout, and what it cost
+## The ₹10 first payout, and the 70% boost
 
-A user cannot reach a ₹30 minimum inside their first month at a ₹15 cap. Their first payout would land about six weeks in — and six weeks of "trust me" is exactly what every reward app that never pays also says.
+A user should not wait six weeks to find out whether the money is real. Six weeks of "trust me" is exactly what every reward app that never pays also says.
 
-So the first payout is **₹10**, then ₹30 after.
+So the first payout threshold is **₹10**, then ₹30 after — and the share is **70% until lifetime earnings reach ₹10**, which brings the first real payout to about **11 days** at base.
 
-That is not free, and the model prices it exactly:
-
-| | v0.2 (₹30 first) | **v0.3 (₹10 first)** |
-|---|---:|---:|
-| Breakage | 40% | **25%** |
-| Sustainable cap | ₹21.65 | **₹16.75** |
-| Cost of the decision | — | **−₹4.90/user/month (−23%)** |
-
-A lower threshold means fewer users churn without ever cashing out, so less of what is accrued goes unpaid, so real cash cost rises and the cap falls.
-
-**Worth it, because the first payout is acquisition, not a reward.** ₹10 plus a ₹3 fee is ₹13 per converting user, or ₹9.10 blended across all installs — **41% of a ₹22 paid install.** It buys a paid, retained, trusting user for less than half what an ad pays for a raw install that may never open the app twice. Booking it against the reward budget would wrongly depress the cap in every later month.
+**The boost is acquisition, not reward.** ₹10 plus a ₹3 fee is ₹13 per converting user, or ₹9.10 blended across all installs — **41% of a ₹22 paid install.** It buys a paid, retained, trusting user for less than half what an ad pays for a raw install that may never open the app twice. The no-loss gate tests the 70% tier too, and it clears in every column.
 
 ### It needs a farming gate
 
@@ -84,35 +116,59 @@ The prototype includes the mitigation: pick your phone, get the literal menu pat
 
 Also specified in PRD §11: offline-first alarms, APK under 15MB, 2GB RAM targets, data-cost transparency on rewarded video, and Indian digit grouping (₹1,00,000 — not ₹100,000).
 
-**Language:** Hinglish default, with English, Devanagari Hindi, Bengali and Tamil switchable. Hinglish needs no font or keyboard support and is how the target user actually reads. Every string lives in `i18n.js` — five locales, 159 keys each, parity enforced by test.
+**Language:** Hinglish default, with English, Devanagari Hindi, Bengali and Tamil switchable. Hinglish needs no font or keyboard support and is how the target user actually reads. Every string lives in `i18n.js` — five locales, 202 keys each, parity enforced by test.
 
 **The wedge:** students. Waking at 5am to study is a real, already-felt need, so the money is a bonus on top of a reason the user already has — rather than the only reason to install, which is the fight you lose against a free stock alarm.
 
 ---
 
-## Where the ads go, and where they never go
+## The daily loop — three touches, one habit
 
-Advertising is the biggest revenue line, so placement is specified rather than left to whoever builds the screen.
+**Morning: the alarm.** Rings until dismissed. Completing it unlocks the day.
+
+**Through the day: 5 sets of 4 questions**, one rewarded video after every 2 — 2 ads per set, 10 a day. Sets unlock in three tranches (after the alarm, midday, evening), so one session becomes three. Questions scale to the chosen exam, so the loop reads as revision rather than a chore.
+
+**Locked until the alarm is done.** No alarm, no sets, no earning. Every rupee still traces to a real wake-up. Without it AlarmX becomes a math-for-cash app that happens to have an alarm.
+
+**Evening: the Daily Close** — the moment the user feels paid, and the best idea in the design.
+
+```
+Aaj: 10 ads dekhe  ->  ₹0.53 kamaye
+     Tumhara hissa: 50%     Streak: 6 din
+     Kal 7 din ho jayenge -> hissa 55% ho jayega
+```
+
+Three things it always shows: **how many verified views**, **the share applied**, and **the rupees**. Effort maps onto money where the user can see it:
+
+| Sets done | Verified views | Earned today |
+|---:|---:|---:|
+| 0 | 4 | ₹0.21 |
+| 3 | 10 | ₹0.53 |
+| 5 | 14 | ₹0.74 |
+
+**Every reward app in this category hides this arithmetic, which is exactly why nobody believes them.** AlarmX can show its working because its working is honest. The receipt is computed from the ledger, never typed — the test suite asserts the number on screen equals the ledger total.
+
+---
+
+## Where the ads go, and where they never go
 
 **No ad ever sits between the user and dismissing the alarm.** No interstitial, no banner, no rewarded video, not even a spinner waiting on an ad request. The dismissal task is interactive the instant the alarm fires.
 
-That is a hard rule with the same standing as "the alarm rings until dismissed", for three reasons in order of severity:
+A hard rule with the same standing as "the alarm rings until dismissed":
 
-1. **It would reverse the change that de-risked this product.** The whole point of the reward-window design is that AlarmX is never the reason someone misses a shift or an exam. An unskippable pre-roll in front of a 5am alarm puts that back, and worse, because the user cannot dismiss their way out of it.
-2. **It is a Play suspension risk.** Play's ads policy targets full-screen interstitials that interrupt normal use or interfere with device function. A reward app that blocks an alarm is close to the worst version of that.
-3. **It is worth almost nothing.** Modelled and priced: **₹0.73 per user per month, moving the cap ₹0.65.** That is the entire value being weighed against the first two points.
+1. **It would reverse the change that de-risked this product.** AlarmX must never be the reason someone misses a shift or an exam.
+2. **It is a Play suspension risk.** A reward app that blocks an alarm is close to the worst case Play's ads policy describes.
+3. **It is worth almost nothing.** Priced: **₹0.73 per user per month.**
 
-**Where interstitials do go** — the four per day in the model, and nowhere else: after dismissal completes, between survey questions, on results and leaderboard screens, and on app open when the user did not arrive from an alarm.
+**Where ads do go:** the math section (2 per set), after dismissal, between survey questions, on results screens, and on app open when the user did not arrive from an alarm.
 
-**Rewarded video is the primary format**, four per active day, always opt-in with the reward named before the view starts. Rewarded eCPM is $1.50 against $0.40 for interstitial, so an extra rewarded view is worth **3.8× an extra interstitial**. The format that respects the user is also the one that pays more.
-
-Every ad surface in the prototype carries a `data-ad-slot` attribute, which is what makes the rule testable rather than a matter of opinion — `verify_prototype.py` asserts that the ring screen contains zero of them.
+Every ad surface carries a `data-ad-slot` attribute, which makes the rule testable rather than a matter of opinion — `verify_prototype.py` asserts the ring screen contains zero of them.
 
 ---
 
 ## The regional calendar and the 4×2 widget
 
-A ₹15 cap means engagement cannot be bought with money. So it is bought with something people already open every morning.
+Ad-funded earning is real but modest — ₹0.32 to ₹0.75 a day. So engagement is also bought with something people already open every morning.
 
 Bengali panjika and Tamil daily calendar are checked daily by millions of households. **That habit already exists — the widget does not have to create one, only occupy it.** The calendar is the reason to look; AlarmX state is what they see while looking. No nagging notification required.
 
@@ -141,30 +197,34 @@ Worth seeing: 14 April 2026 is Puthandu in Chennai, Pohela Boishakh in Dhaka, an
 open prototype/index.html      # macOS
 ```
 
-No build step, no dependencies, no network. A **DEV** bar at the bottom lets you ring the alarm, switch language, jump the day counter, force the cap and flag the account.
+No build step, no dependencies, no network. A **DEV** bar at the bottom lets you ring the alarm, switch language, jump the day counter, open the math section, advance the tranche and the streak, simulate an ad fill failure, and flag the account.
 
 Worth doing in this order:
 
 1. **Walk onboarding.** Language → calendar → exam → OEM setup → survey. Skip the survey and confirm the app still works fully.
 2. **Arm a math alarm, ring it, let the 10 seconds lapse.** The alarm keeps ringing. That is the single most important change in the design.
-3. **Try to withdraw with ₹15 but 0 alarm days.** Blocked — the gate, not the money, is what is missing.
-4. **Hit `7 days`, then withdraw.** ₹10 goes out with a UPI reference. Then watch the minimum become ₹30.
-5. **Press `Lang`** and read the same dashboard in all five languages. In Bengali and Tamil the panchang itself changes script, not just the chrome.
-6. **Press `Cal`, then `Boishakh` and `Pongal`.** The two traditions disagree on which day the year turns, and the app shows that rather than hiding it.
-7. **Flag the account.** Read the review message and use the appeal.
+3. **Press `Math` before doing the alarm.** Locked. Then ring and dismiss the alarm and try again.
+4. **Solve two questions.** An ad appears. Watch it and see the exact credit — your share of what that view earned.
+5. **Press `Close`.** The receipt shows the working: views × share = rupees. Nothing hidden.
+6. **Press `NoFill`, then watch an ad.** ₹0, said plainly. That is the safety property, visible.
+7. **Press `7d` and `30d`** and watch the share ladder move.
+8. **Try to withdraw with 0 alarm days.** Blocked — the gate, not the money, is what is missing.
+9. **Press `Lang`** and read the same dashboard in all five languages. In Bengali and Tamil the panchang itself changes script, not just the chrome.
+10. **Press `Cal`, then `Boishakh` and `Pongal`.** The two traditions disagree on which day the year turns, and the app shows that rather than hiding it.
+11. **Flag the account.** Read the review message and use the appeal.
 
 ### Tests
 
 ```bash
 pip install playwright
-python3 tests/verify_prototype.py       # 173 checks, browser
+python3 tests/verify_prototype.py       # 208 checks, browser
 node tests/verify_panchang.js           # 38 checks, no dependencies
 node tests/verify_bengali_cross.js      # 19 checks, no dependencies
 ```
 
-**230 checks, all passing as of this commit.**
+**265 checks, all passing as of this commit.**
 
-`verify_prototype.py` covers the payout gate, locale parity across all five languages, the three Bengali/Tamil calendar systems, Indian number grouping, the alarm reward window, QR validation, the 4x2 widget geometry, the calendar screen, ad placement, and every regression from v0.2.
+`verify_prototype.py` covers the share mechanism (an unverified view credits nothing, a fill failure pays ₹0, half the views pay half the money), the share tiers, the 20-view daily ceiling, a 26-day simulation asserting every day pays, the math section's alarm lock and ad cadence, the Daily Close receipt matching the ledger, locale parity across all five languages, the three Bengali/Tamil calendar systems, Indian number grouping, the alarm reward window, QR validation, the 4x2 widget, ad placement, and every regression from v0.2.
 
 `verify_panchang.js` checks the astronomy from first principles rather than against a copied almanac: sun longitude at the 2026 solstices and equinoxes, lunation length, the tithi definition at syzygy, Lahiri ayanamsa, the Mesha sankranti window across four years, and the real festival anchors — Puthandu, Poila Boishakh and Thai Pongal in two different years, which land on different days under the two traditions.
 

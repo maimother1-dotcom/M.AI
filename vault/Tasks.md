@@ -22,7 +22,9 @@ Recurring every day. Drafts only, Bijoy approves before sending. See [[Notes/Pla
 
 - [x] [P1] Decide the first-withdrawal rule — ₹10 first payout then ₹30, booked as acquisition
 - [ ] [P1] Validate survey data resale value with a real buyer — still the weakest input, and with ads alone the Conservative case is loss-making — due: 2nd August 2026
-- [ ] [P1] Open a real AdMob account and confirm actual rewarded eCPM and fill rate for India Android — ads are 61% of revenue and both numbers are published benchmarks, not measurements — due: 9th August 2026
+- [ ] [P1] Open a real AdMob account and confirm actual rewarded eCPM and fill rate for India Android — both are published benchmarks, not measurements. Under the share model a wrong number changes earnings, never solvency — due: 9th August 2026
+- [ ] [P1] Confirm AdMob server-side verification (SSV) is available on the chosen ad units and that the callback carries realised revenue — the entire no-loss guarantee depends on it — due: 9th August 2026
+- [ ] [P2] Decide the legal and tax framing of a revenue share paid to users — it is closer to a rev-share than a prize, which may be better for the Play policy position and worse for TDS — due: 16th August 2026
 - [ ] [P2] Measure whether users actually complete 4 rewarded videos a day once the app is live — the v0.5 cap rise rests on it — due: 60 days after launch
 - [ ] [P2] Pick the PSP (RazorpayX vs Cashfree) and confirm the real per-payout rate at expected volume — due: 5th August 2026
 - [ ] [P2] Legal review of the DPDP consent flow and the Play Store reward-app policy position — due: 9th August 2026

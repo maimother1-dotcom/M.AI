@@ -148,6 +148,30 @@
   .kv.good span:last-child{color:var(--good)}
   .syslabel{font-size:11px;color:var(--dim);margin-top:8px;line-height:1.5}
 
+  /* ---- share ladder, math sets, daily close (PRD 2, 4.7, 4.8) ----------- */
+  .ladder{display:flex;gap:6px;margin-top:10px}
+  .ladder div{flex:1;text-align:center;padding:7px 4px;border-radius:9px;font-size:10px;
+    color:var(--dim);background:var(--panel2);border:1px solid var(--line)}
+  .ladder div b{display:block;font-size:14px;color:var(--dim);margin-bottom:2px}
+  .ladder div.on{border-color:var(--good);background:rgba(61,220,151,.12);color:#bff2dc}
+  .ladder div.on b{color:var(--good)}
+  .sets{display:flex;gap:6px;margin-top:10px}
+  .sets div{flex:1;text-align:center;padding:9px 4px;border-radius:10px;font-size:10px;
+    background:var(--panel2);border:1px solid var(--line);color:var(--dim)}
+  .sets div b{display:block;font-size:15px;color:var(--ink)}
+  .sets div.done{border-color:var(--good);color:#bff2dc}
+  .sets div.done b{color:var(--good)}
+  .sets div.locked{opacity:.35}
+  .sets div.now{border-color:var(--accent);background:rgba(91,140,255,.15)}
+  .receipt{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;
+    line-height:1.85;background:var(--panel2);border:1px solid var(--line);
+    border-radius:10px;padding:12px;margin-top:10px;overflow-x:auto}
+  .receipt .r{display:flex;justify-content:space-between;gap:12px}
+  .receipt .tot{border-top:1px solid var(--line);margin-top:6px;padding-top:6px;
+    color:var(--good);font-weight:700}
+  .receipt .no{color:var(--bad)}
+  .closebig{font-size:38px;font-weight:800;color:var(--good);line-height:1.1}
+
   /* ---- ad slots, PRD 4.6 -------------------------------------------------- */
   /* Every ad surface in the product is one of these, and every one carries
      data-ad-slot. That is what makes "no ad in the dismissal path" a testable
@@ -219,7 +243,20 @@
    and 16.7. Nothing is copied from any published almanac.
    --------------------------------------------------------------------------- */
 
-const CAP = 15;                 // PRD 2 — launch cap
+/* ---------------------------------------------------------------------------
+   PRD 2 — THE MECHANISM.
+   The user is paid a SHARE of ad revenue that has already arrived. There is
+   no cap and no rate. Nothing is credited without a verified ad view, so a
+   loss on the reward line is structurally impossible rather than unlikely.
+   In production the trigger is AdMob's server-side verification callback
+   (PRD 8.3); here creditAdView(source, verified) simulates it.
+   --------------------------------------------------------------------------- */
+const AD_VALUE = 0.1056;        // Rs per verified rewarded view (base eCPM, 80% fill)
+const VIEW_CEILING = 20;        // PRD 2 — daily, replaces the old monthly cap
+const SHARE_BASE = 0.50;        // days 1-6
+const SHARE_7 = 0.55;           // day 7+ streak
+const SHARE_30 = 0.60;          // day 30+ streak — worst case for the business
+const SHARE_BOOST = 0.70;       // until lifetime Rs10, booked as acquisition
 const POT_START = 30;           // PRD 4.2
 const FIRST_MIN = 10;           // PRD 6.2 — first payout
 const LATER_MIN = 30;           // PRD 6.2 — every payout after
@@ -227,7 +264,11 @@ const GATE_DAYS = 7;            // PRD 6.3 — anti-farming gate
 const REWARD_WINDOW = 10000;    // PRD 3.1
 const MAX_RING = 300000;        // 5 minutes, PRD 3.1
 const REFERRAL = 5;             // CAC line, never against the cap
-const REWARDED_PER_DAY = 4;     // PRD 4.6 — raised from 3 in v0.5
+const REWARDED_PER_DAY = 4;     // PRD 4.6 — the standing offer, outside the math section
+const MATH_SETS = 5;            // PRD 4.7
+const MATHS_PER_SET = 4;
+const ADS_PER_SET = 2;          // one after every 2 questions
+const TRANCHES = [1, 3, 5];     // sets unlocked after the alarm / midday / evening
 
 const SIGNUP_Q = [
   ["age",   ["Under 18","18–24","25–34","35+"]],
@@ -286,6 +327,11 @@ const S = {
   alarmDoneToday: false, spinUsedToday: false,
   dripIdx: 0, dripDoneToday: false,
   rewardedToday: 0,
+  /* PRD 2 — every credited view is logged with the value it actually earned,
+     so the Daily Close receipt is computed and never typed. */
+  ledger: [], lifetimeEarned: 0,
+  setsDone: 0, tranche: 0, mathInSet: 0, setAdsSeen: 0,
+  fillFailure: false,
   missionsDone: [], missionsShown: false,
   batch: null, referred: 0,
   underReview: false, sponsorId: null,
@@ -424,6 +470,7 @@ const AD_SLOTS = {
   postDismiss: { kind: "interstitial", key: "adPostDismiss" },
   survey:      { kind: "interstitial", key: "adSurvey" },
   results:     { kind: "banner",       key: "adResults" },
+  mathSet:     { kind: "rewarded",     key: "adMathSet" },
   /* Interstitial, not rewarded — PRD 4.6 lists "before the streak or spin
      reward screen" among the allowed interstitial slots. The rewarded offer
      below is a separate, opt-in surface. */
@@ -473,14 +520,57 @@ function toast(msg){
 }
 
 /* ---- earning respects the cap (PRD 2 / 6.1) ------------------------------ */
+/* ---- the credit engine, PRD 2 and 8.3 ------------------------------------ */
+/* Which share the user is on. Read server-side in production — the client
+   never sends its own tier. */
+function shareTier(){
+  if (S.lifetimeEarned < FIRST_MIN) return { pct: SHARE_BOOST, key: "boost" };
+  if (S.streak >= 30) return { pct: SHARE_30, key: "s30" };
+  if (S.streak >= 7)  return { pct: SHARE_7,  key: "s7" };
+  return { pct: SHARE_BASE, key: "base" };
+}
+function nextTier(){
+  if (S.lifetimeEarned < FIRST_MIN) return null;
+  if (S.streak < 7)  return { at: 7,  pct: SHARE_7 };
+  if (S.streak < 30) return { at: 30, pct: SHARE_30 };
+  return null;
+}
+function todayEntries(){ return S.ledger.filter(e => e.day === S.day); }
+function viewsToday(){ return todayEntries().filter(e => e.verified).length; }
+function earnedToday(){ return todayEntries().reduce((a, e) => a + e.credit, 0); }
+
+/* THE safety property, and the thing the tests exist to protect:
+   an unverified view credits NOTHING. In production `verified` is true only
+   when AdMob's signed SSV callback has been checked server-side. */
+function creditAdView(source, verified){
+  if (verified === undefined) verified = !S.fillFailure;
+  if (!verified){
+    S.ledger.push({ day: S.day, source, verified: false, gross: 0, pct: 0, credit: 0 });
+    toast(t("adNoFill"));
+    return 0;
+  }
+  if (viewsToday() >= VIEW_CEILING){
+    addXP(5, t("adCeiling"));
+    return 0;
+  }
+  const gross = AD_VALUE;
+  const pct = shareTier().pct;
+  const credit = gross * pct;
+  S.ledger.push({ day: S.day, source, verified: true, gross, pct, credit });
+  S.withdrawable += credit;
+  S.lifetimeEarned += credit;
+  S.earnedThisCycle += credit;
+  return credit;
+}
+
+/* Kept for the non-ad rewards that still exist (referral, signup bonus).
+   These are acquisition spend, not the revenue share — PRD 6.2. */
 function earn(amount, why){
-  const room = CAP - S.earnedThisCycle;
-  if (room <= 0){ toast(t("capHit", "1 Aug")); return 0; }
-  const paid = Math.min(amount, room);
-  S.earnedThisCycle += paid;
-  S.withdrawable += paid;
-  toast("+" + inr(paid) + " — " + why);
-  return paid;
+  S.earnedThisCycle += amount;
+  S.withdrawable += amount;
+  S.lifetimeEarned += amount;
+  toast("+" + inr(amount) + " — " + why);
+  return amount;
 }
 function addXP(n, why){
   S.xp += (S.festival ? n * 2 : n);
@@ -597,9 +687,6 @@ window.finishSurvey = () => {
 
 /* ============================ DASHBOARD ================================== */
 function renderDashboard(){
-  const capPct = Math.min(100, S.earnedThisCycle / CAP * 100);
-  const potPct = S.pot / POT_START * 100;
-  const nt = nextTierAt();
   const dLeft = daysToExam();
   const e = examMeta();
 
@@ -619,6 +706,20 @@ function renderDashboard(){
     <button class="wide sm ghost" onclick="go('calendar')">${t("openCalendar")}</button>
   </div>
 
+  <div class="card">
+    <h3>${t("mathTitle")}</h3>
+    <div class="row"><div>
+      <div class="dim">${mathOpen() ? t("mathSetsLeft", Math.max(0, setsUnlocked() - S.setsDone))
+        : t("mathLockedTitle")}</div>
+      <div class="big" style="color:var(--good)">${inr(earnedToday())}</div>
+    </div><div class="pill ${mathOpen()?"hot":""}">${
+      mathOpen() ? Math.round(shareTier().pct*100) + "%" : t("locked")}</div></div>
+    <div class="dim" style="margin-top:6px">${t("mathDashNote", MATH_SETS, MATHS_PER_SET)}</div>
+    <button class="primary wide" onclick="go('math')" ${mathOpen()?"":"disabled"}>${
+      mathOpen() ? t("mathOpenBtn") : t("mathLockedBtn")}</button>
+    <button class="wide sm ghost" onclick="go('close')">${t("seeClose")}</button>
+  </div>
+
   ${dLeft !== null ? `
   <div class="card">
     <div class="row"><div>
@@ -630,10 +731,14 @@ function renderDashboard(){
   <div class="card">
     <h3>${t("wallet")}</h3>
     <div class="row"><div class="big">${inr(S.withdrawable)}</div>
-      <div class="pill">${t("capNote", inr(CAP))}</div></div>
-    <div class="bar"><i style="width:${capPct}%;background:${capPct>=100?"var(--warn)":"var(--good)"}"></i></div>
-    <div class="dim">${t("earnedOf", inr(S.earnedThisCycle), inr(CAP))}
-      ${capPct >= 100 ? t("capHit", "1 Aug") : t("fullWithdraw")}</div>
+      <div class="pill hot">${t("shareNow", Math.round(shareTier().pct*100))}</div></div>
+    <div class="bar"><i style="width:${Math.min(100, viewsToday()/VIEW_CEILING*100)}%;background:var(--good)"></i></div>
+    <div class="dim">${t("viewsToday", viewsToday(), VIEW_CEILING)}
+      ${viewsToday() >= VIEW_CEILING ? t("adCeiling") : t("fullWithdraw")}</div>
+    <div class="dim" style="margin-top:6px">${
+      shareTier().key === "boost" ? t("shareBoost", inr(FIRST_MIN))
+      : nextTier() ? t("shareNext", nextTier().at - S.streak, Math.round(nextTier().pct*100))
+      : t("shareMax")}</div>
     ${!S.hasWithdrawnEver ? `
       <div class="dim" style="margin-top:8px;color:${gatePassed()?"var(--good)":"var(--warn)"}">
         ${t("daysGate", S.alarmDays, GATE_DAYS, inr(FIRST_MIN))}</div>` : ""}
@@ -654,12 +759,14 @@ function renderDashboard(){
   </div>
 
   <div class="card">
-    <h3>${t("streakPot")}</h3>
-    <div class="row"><div class="big">${inr(S.pot)}</div>
-      <div class="pill">${S.misses} ${t("misses")}</div></div>
-    <div class="bar"><i style="width:${potPct}%;background:${S.pot>=30?"var(--good)":S.pot>=15?"var(--warn)":"var(--bad)"}"></i></div>
-    <div class="dim">${t("potNote")}
-      ${nt !== null ? `<b style="color:var(--warn)">${t("potWarn", nt, inr(potTier()===30?15:5))}</b>` : t("potFloor")}</div>
+    <h3>${t("shareLadder")}</h3>
+    <div class="row"><div class="big" style="color:var(--good)">${Math.round(shareTier().pct*100)}%</div>
+      <div class="pill">${S.streak} ${t("days")}</div></div>
+    <div class="ladder">
+      ${[[0,SHARE_BASE],[7,SHARE_7],[30,SHARE_30]].map(([d,pc]) =>
+        `<div class="${S.streak>=d?"on":""}"><b>${Math.round(pc*100)}%</b>${d?d+"d":"1d"}</div>`).join("")}
+    </div>
+    <div class="dim" style="margin-top:8px">${t("shareLadderNote")}</div>
     <div class="dim" style="margin-top:6px">${t("grace")}: <b style="color:var(--ink)">${S.grace}</b>
       · ${t("studyStreak")}: <b style="color:var(--ink)">${S.streak} ${t("days")}</b></div>
   </div>
@@ -758,11 +865,162 @@ function renderDashboard(){
 
   <div class="card">
     <h3>${t("sponsored")}</h3>
-    <div class="dim">${t("sponsoredNote", inr(CAP))}</div>
+    <div class="dim">${t("sponsoredNote", Math.round(shareTier().pct*100) + "%")}</div>
   </div>`;
 }
 
 /* ---- calendar screen, PRD 16.5 ------------------------------------------ */
+/* ---- the daily math section, PRD 4.7 ------------------------------------- */
+function setsUnlocked(){ return TRANCHES[Math.min(S.tranche, TRANCHES.length - 1)]; }
+function mathOpen(){ return S.alarmDoneToday; }
+
+function renderMath(){
+  if (!mathOpen()) {
+    return `
+    <div class="calhead">
+      <button class="sm ghost" onclick="go('dashboard')">${t("back")}</button>
+      <b>${t("mathTitle")}</b><span class="pill">${t("locked")}</span>
+    </div>
+    <div class="card">
+      <div class="banner warn" style="margin:0"><b>${t("mathLockedTitle")}</b><br>${t("mathLockedBody")}</div>
+      <div class="syslabel">${t("mathLockedWhy")}</div>
+    </div>`;
+  }
+
+  const open = setsUnlocked();
+  const cur = S.setsDone;
+  const inSet = S.mathInSet;
+  const needAd = inSet > 0 && inSet % 2 === 0 && S.setAdsSeen < Math.floor(inSet / 2);
+
+  return `
+  <div class="calhead">
+    <button class="sm ghost" onclick="go('dashboard')">${t("back")}</button>
+    <b>${t("mathTitle")}</b>
+    <span class="pill hot">${Math.round(shareTier().pct * 100)}%</span>
+  </div>
+
+  <div class="card">
+    <div class="row"><div>
+      <div class="dim">${t("mathToday")}</div>
+      <div class="big" style="color:var(--good)">${inr(earnedToday())}</div>
+    </div><div class="pill">${t("viewsToday", viewsToday(), VIEW_CEILING)}</div></div>
+    <div class="sets">
+      ${[...Array(MATH_SETS).keys()].map(i => `<div class="${
+        i < cur ? "done" : i === cur && i < open ? "now" : i >= open ? "locked" : ""}">
+        <b>${i < cur ? "✓" : i + 1}</b>${t("setLabel")}</div>`).join("")}
+    </div>
+    <div class="dim" style="margin-top:8px">${t("tranchNote", open, MATH_SETS)}</div>
+  </div>
+
+  ${cur >= open ? `
+  <div class="card">
+    <div class="dim">${cur >= MATH_SETS ? t("mathAllDone") : t("mathTrancheDone")}</div>
+    <button class="wide sm ghost" onclick="go('close')">${t("seeClose")}</button>
+  </div>` : needAd ? `
+  <div class="card">
+    <h3>${t("mathAdTitle")}</h3>
+    ${adSlot("mathSet")}
+    <div class="dim" style="margin-top:8px">${t("mathAdNote", inr(AD_VALUE * shareTier().pct))}</div>
+    <button class="primary wide" id="mathad" onclick="watchSetAd()">${t("mathAdBtn")}</button>
+  </div>` : `
+  <div class="card">
+    <h3>${t("mathQ", inSet + 1, MATHS_PER_SET, cur + 1)}</h3>
+    <div class="bar"><i style="width:${inSet / MATHS_PER_SET * 100}%"></i></div>
+    <div class="q" id="mathq">${S.mq ? S.mq.a + " + " + S.mq.b + " = ?" : ""}</div>
+    <input id="mathin" placeholder="${t("answer")}" inputmode="numeric"
+      onkeydown="if(event.key==='Enter')answerMath()">
+    <button class="primary wide" onclick="answerMath()">${t("submit")}</button>
+  </div>`}
+
+  <div class="card">
+    <h3>${t("mathWhy")}</h3>
+    <div class="dim">${t("mathWhyBody", MATH_SETS, MATHS_PER_SET, ADS_PER_SET)}</div>
+  </div>`;
+}
+
+function newMathQ(){
+  const hard = examMeta().id !== "none";
+  S.mq = { a: 10 + Math.floor(Math.random() * (hard ? 80 : 20)),
+           b: 10 + Math.floor(Math.random() * (hard ? 80 : 20)) };
+}
+window.answerMath = () => {
+  const el = $("mathin");
+  if (!el || !S.mq) return;
+  if (parseInt(el.value, 10) !== S.mq.a + S.mq.b){ toast(t("mathWrong")); el.value = ""; return; }
+  S.mathInSet++;
+  addXP(4, t("mathTitle"));
+  if (S.mathInSet >= MATHS_PER_SET){
+    S.setsDone++; S.mathInSet = 0; S.setAdsSeen = 0;
+    toast(t("setDone", S.setsDone, MATH_SETS));
+  }
+  newMathQ();
+  draw();
+};
+/* One rewarded video after every 2 questions — PRD 4.7. The credit is the
+   user's share of what that view actually earned, nothing more. */
+window.watchSetAd = () => {
+  const paid = creditAdView("math", !S.fillFailure);
+  S.setAdsSeen++;
+  if (paid > 0) toast("+" + inr(paid) + " — " + t("adRewardedLabel"));
+  draw();
+};
+
+/* ---- the Daily Close, PRD 4.8 -------------------------------------------- */
+/* The receipt is computed from the ledger, never typed. Showing the working
+   is the whole point: every app in this category hides it. */
+function renderClose(){
+  const rows = todayEntries();
+  const ok = rows.filter(e => e.verified);
+  const failed = rows.length - ok.length;
+  const nt = nextTier();
+
+  return `
+  <div class="calhead">
+    <button class="sm ghost" onclick="go('dashboard')">${t("back")}</button>
+    <b>${t("closeTitle")}</b>
+    <span class="pill">${t("dayN", S.day)}</span>
+  </div>
+
+  <div class="card" style="text-align:center">
+    <div class="dim">${t("closeEarned")}</div>
+    <div class="closebig">${inr(earnedToday())}</div>
+    <div class="dim" style="margin-top:6px">${t("closeSummary", ok.length,
+      Math.round(shareTier().pct * 100))}</div>
+  </div>
+
+  <div class="card">
+    <h3>${t("closeReceipt")}</h3>
+    <div class="receipt">
+      ${ok.length ? ok.map(e =>
+        `<div class="r"><span>${t("srcs_" + e.source)}</span><span>${
+          inr(e.gross)} × ${Math.round(e.pct * 100)}% = ${inr(e.credit)}</span></div>`).join("")
+        : `<div class="dim">${t("closeNothing")}</div>`}
+      ${failed ? `<div class="r no"><span>${t("closeNoFill", failed)}</span><span>${inr(0)}</span></div>` : ""}
+      <div class="r tot"><span>${t("closeTotal")}</span><span>${inr(earnedToday())}</span></div>
+    </div>
+    <div class="syslabel">${t("closeHonest")}</div>
+  </div>
+
+  <div class="card">
+    <h3>${t("shareLadder")}</h3>
+    <div class="ladder">
+      ${[[0,SHARE_BASE],[7,SHARE_7],[30,SHARE_30]].map(([d,pc]) =>
+        `<div class="${S.streak>=d?"on":""}"><b>${Math.round(pc*100)}%</b>${d?d+"d":"1d"}</div>`).join("")}
+    </div>
+    <div class="dim" style="margin-top:8px">${
+      shareTier().key === "boost" ? t("shareBoost", inr(FIRST_MIN))
+      : nt ? t("shareNext", nt.at - S.streak, Math.round(nt.pct*100))
+      : t("shareMax")}</div>
+  </div>
+
+  <div class="card">
+    <div class="row"><div>
+      <div class="dim">${t("wallet")}</div>
+      <div class="big">${inr(S.withdrawable)}</div>
+    </div><button class="sm" onclick="go('dashboard')">${t("back")}</button></div>
+  </div>`;
+}
+
 function renderCalendar(){
   const r = regionMeta();
   const base = curDate();
@@ -1038,9 +1296,15 @@ function devbar(){
     <button onclick="nextDay()">+Day</button>
     <button onclick="nextCycle()">+Month</button>
     <button onclick="S.alarmDays=7;draw()">7 days</button>
-    <button onclick="S.earnedThisCycle=CAP;S.withdrawable=CAP;draw()">Cap</button>
+    <button onclick="S.withdrawable=30;S.lifetimeEarned=30;draw()">₹30</button>
     <button onclick="S.underReview=true;draw()">Flag</button>
     <button onclick="S.festival=!S.festival;draw()">Fest</button>
+    <button onclick="go('math')">Math</button>
+    <button onclick="go('close')">Close</button>
+    <button onclick="S.tranche=Math.min(2,S.tranche+1);draw()">Tranche</button>
+    <button onclick="S.streak=7;draw()">7d</button>
+    <button onclick="S.streak=30;draw()">30d</button>
+    <button onclick="S.fillFailure=!S.fillFailure;toast('fill failure: '+S.fillFailure);draw()">NoFill</button>
     <button onclick="go('calendar')">Cal</button>
     <button onclick="cycleRegion()">Region</button>
     <button onclick="shiftDate(1)">+Date</button>
@@ -1074,12 +1338,16 @@ window.nextDay = () => {
   S.day++; S.alarmDoneToday = false; S.spinUsedToday = false;
   S.dripDoneToday = false; S.missionsDone = []; S.missionsShown = false;
   S.rewardedToday = 0;
+  S.setsDone = 0; S.tranche = 0; S.mathInSet = 0; S.setAdsSeen = 0;
+  newMathQ();
   draw();
 };
 window.nextCycle = () => {
   S.day = 1; S.earnedThisCycle = 0; S.pot = POT_START; S.misses = 0;
   S.alarmDoneToday = false; S.spinUsedToday = false; S.dripDoneToday = false;
   S.missionsDone = []; S.missionsShown = false; S.rewardedToday = 0;
+  S.setsDone = 0; S.tranche = 0; S.mathInSet = 0; S.setAdsSeen = 0;
+  S.ledger = []; newMathQ();
   draw();
 };
 
@@ -1089,7 +1357,8 @@ function draw(){
   $("xppill").textContent = S.xp + " XP";
   const screens = { lang: renderLang, region: renderRegion, exam: renderExam,
                     oem: renderOem, survey: renderSurvey,
-                    calendar: renderCalendar, dashboard: renderDashboard };
+                    calendar: renderCalendar, math: renderMath, close: renderClose,
+                    dashboard: renderDashboard };
   $("app").innerHTML = (screens[S.screen] || renderDashboard)();
   $("devbar").innerHTML = devbar();
   $("sponsorslot").className = S.sponsorId ? "sponsor on" : "sponsor";
@@ -1102,6 +1371,7 @@ window.addEventListener("devicemotion", e => {
   if (Math.abs(a.x||0) + Math.abs(a.y||0) + Math.abs(a.z||0) > 40) finishAlarm();
 });
 
+newMathQ();
 draw();
 </script>
 </body>
