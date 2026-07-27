@@ -38,7 +38,10 @@ Recurring every day. Drafts only, Bijoy approves before sending. See [[Notes/Pla
 - [ ] [P2] Get the Bengali and Tamil strings, and the Tamil 60-year cycle names, read by native speakers — the cycle spellings are unverified — due: 12th August 2026
 - [ ] [P2] Decide whether Bangladesh is a launch market — it now has a working calendar and more Bengali speakers than West Bengal, but UPI does not reach it so payouts need a different rail (bKash/Nagad) — due: 20th August 2026
 - [ ] [P3] Find out whether the median Bengali household follows Vishuddha Siddhanta or Gupta Press — if Gupta Press dominates, the v2 calculator becomes urgent — due: 23rd August 2026
-- [ ] [P3] Scope the native Android build from `apps/alarmx/PRD.md`, including the 4x2 widget — due: 12th August 2026
+- [x] [P1] Build the money and anti-fraud core — Kotlin domain module, 28 tests passing on the JVM
+- [x] [P1] Build the server credit engine — Node backend, 51 tests including a real AdMob signature round-trip
+- [ ] [P1] Finish the Android app layer on a machine with the SDK — UI, Room, AdMob, Firebase Auth. The core and backend are done; this is the remaining build — due: 30th August 2026
+- [ ] [P1] Test the alarm on a physical Redmi and Realme once the app compiles — emulators do not reproduce OEM battery killers — due: with the first build
 
 ### System
 

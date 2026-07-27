@@ -1,0 +1,19 @@
+{
+  "name": "alarmx-backend",
+  "version": "0.7.0",
+  "private": true,
+  "description": "AlarmX server. Every rupee credited passes through here.",
+  "type": "commonjs",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}

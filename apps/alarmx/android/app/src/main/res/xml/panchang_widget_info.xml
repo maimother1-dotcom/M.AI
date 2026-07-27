@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The 4x2 widget. PRD 16.4.
+
+  targetCellWidth/Height are the Android 12+ way of asking for 4x2; minWidth
+  and minHeight are the pre-12 fallback and must stay consistent with it.
+
+  updatePeriodMillis is deliberately 0. The content changes ONCE A DAY, so it is
+  updated by an AlarmManager tick at local midnight plus on alarm-state change.
+  updatePeriodMillis floors at 30 minutes and would burn battery for nothing.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="250dp"
+    android:minHeight="110dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:minResizeWidth="180dp"
+    android:minResizeHeight="110dp"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="0"
+    android:initialLayout="@layout/widget_panchang_4x2"
+    android:previewLayout="@layout/widget_panchang_4x2"
+    android:widgetCategory="home_screen" />

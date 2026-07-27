@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  PRD 18.9. TLS everywhere, no exceptions, no debug override that could ship.
+  cleartextTrafficPermitted is false at every level so a misconfigured endpoint
+  fails loudly rather than silently sending a phone number over plain HTTP.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

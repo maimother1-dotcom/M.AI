@@ -4,7 +4,7 @@ An Android alarm app that pays students cash for waking up early to study.
 
 Built for India first: Hinglish by default, designed around the phones and network conditions the target user actually has, and positioned for NEET / JEE / UPSC / board-exam preparation.
 
-This directory holds the design work — the economics that make a loss impossible, the spec a developer builds from, and a clickable prototype of every mechanic.
+This directory holds the economics, the spec, a clickable prototype, and — as of v0.7 — the first real code: a Kotlin domain core and a Node backend, both compiled and tested.
 
 ---
 
@@ -21,8 +21,11 @@ This directory holds the design work — the economics that make a loss impossib
 | `tests/verify_prototype.py` | 216-check browser suite |
 | `tests/verify_panchang.js` | 38-check astronomy suite, runs in node |
 | `tests/verify_bengali_cross.js` | 19-check cross-validation against two independent Bengali calendar implementations |
-| `tests/verify_security.py` | 34-check security audit — secrets, PII, money safety, attacker paths |
+| `tests/verify_security.py` | 55-check security audit — secrets, PII, money safety, shipped code, attacker paths |
 | `tests/reference/` | Frozen reference data and its provenance |
+| `android/core/` | **Kotlin domain core. Builds and tests.** Money, share ladder, day boundary, reward engine. |
+| `android/app/` | Android layer. **Source only — does not compile here, no SDK.** See `android/README.md`. |
+| `backend/` | **Node/TypeScript server. Builds and tests.** SSV verification, credit engine, payouts, referral gate. |
 
 ---
 
@@ -120,6 +123,18 @@ Also specified in PRD §11: offline-first alarms, APK under 15MB, 2GB RAM target
 **Language:** Hinglish default, with English, Devanagari Hindi, Bengali and Tamil switchable. Hinglish needs no font or keyboard support and is how the target user actually reads. Every string lives in `i18n.js` — five locales, 202 keys each, parity enforced by test.
 
 **The wedge:** students. Waking at 5am to study is a real, already-felt need, so the money is a bonus on top of a reason the user already has — rather than the only reason to install, which is the fight you lose against a free stock alarm.
+
+---
+
+## The code
+
+**`android/core/` builds and tests.** Pure Kotlin, no Android dependencies, so it runs on any JVM. Every rule that can lose money lives there on purpose: integer paise with a floor-and-carry, the share ladder in basis points, the server-side day boundary, and the credit engine whose first guard is verification. 28 tests, including a randomised property test asserting the engine **never pays more than the entitlement** across 200 trials of mixed tiers, spin multipliers, fill failures and replays.
+
+**`backend/` builds and tests.** TypeScript, bigint money, and a real ECDSA signature round-trip for AdMob SSV — a generated keypair, not a mock that would pass anything. Tamper with one query parameter and verification fails; that test is the no-loss guarantee, executed.
+
+**The two are kept in step by a parity test.** `backend/test/backend.test.ts` reads the Kotlin source and fails if a share tier, the daily ceiling, the micropaise resolution or the minimum day gap ever diverges. Verified by changing `STREAK_30` to 6500 and watching the TypeScript go red. The Android copy is advisory; the server decides what is actually paid.
+
+**`android/app/` does not compile here.** The Android SDK cannot be installed in this environment — `dl.google.com` returns 403 — so the Android layer is reviewed source that no compiler has seen. It is excluded from `settings.gradle.kts` so `:core` stays green for a real reason rather than a lucky one. `android/README.md` lists exactly what is written and what is missing.
 
 ---
 
@@ -241,10 +256,21 @@ pip install playwright
 python3 tests/verify_prototype.py       # 216 checks, browser
 node tests/verify_panchang.js           # 38 checks, no dependencies
 node tests/verify_bengali_cross.js      # 19 checks, no dependencies
-python3 tests/verify_security.py        # 34 checks, security audit
+python3 tests/verify_security.py        # 55 checks, security audit
+(cd android && gradle :core:test)       # 28 checks, Kotlin core on the JVM
+(cd backend && npm test)                #  51 checks, server logic
 ```
 
-**307 checks, all passing as of this commit.**
+**407 checks, all passing as of this commit.**
+
+```
+gradle :core:test          28   Kotlin domain core, on the JVM
+npm test  (backend/)       51   SSV, credit engine, referral, payout, parity
+verify_prototype.py       216   browser
+verify_panchang.js         38   astronomy
+verify_bengali_cross.js    19   independent Bengali calendar cross-check
+verify_security.py         55   secrets, PII, money safety, attacker paths
+```
 
 `verify_prototype.py` covers the share mechanism (an unverified view credits nothing, a fill failure pays ₹0, half the views pay half the money), the share tiers, the 20-view daily ceiling, a 26-day simulation asserting every day pays, the math section's alarm lock and ad cadence, the Daily Close receipt matching the ledger, locale parity across all five languages, the three Bengali/Tamil calendar systems, Indian number grouping, the alarm reward window, QR validation, the 4x2 widget, ad placement, and every regression from v0.2.
 

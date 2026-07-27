@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  RemoteViews only — custom views are not permitted in app widgets (PRD 16.4).
+  Left half opens the calendar, right half opens AlarmX. Two tap targets, two
+  PendingIntents, set in PanchangWidgetProvider.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:background="@drawable/widget_bg">
+
+    <LinearLayout
+        android:id="@+id/widget_calendar_half"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="62"
+        android:orientation="vertical"
+        android:padding="10dp">
+
+        <TextView android:id="@+id/widget_clock"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textSize="26sp" android:textStyle="bold" />
+        <TextView android:id="@+id/widget_gregorian"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textSize="11sp" />
+        <TextView android:id="@+id/widget_native_date"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textSize="15sp" android:textStyle="bold" />
+        <TextView android:id="@+id/widget_panchang"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textSize="11sp" android:maxLines="2" android:ellipsize="end" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/widget_alarmx_half"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="38"
+        android:orientation="vertical"
+        android:padding="10dp"
+        android:background="@drawable/widget_strip_bg">
+
+        <TextView android:id="@+id/widget_next_alarm_label"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textSize="9sp" android:text="@string/widget_alarm" />
+        <TextView android:id="@+id/widget_next_alarm"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textSize="14sp" android:textStyle="bold" />
+        <TextView android:id="@+id/widget_share_label"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textSize="9sp" android:text="@string/widget_share" />
+        <TextView android:id="@+id/widget_share"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textSize="14sp" android:textStyle="bold" />
+        <TextView android:id="@+id/widget_exam"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textSize="14sp" android:textStyle="bold" />
+    </LinearLayout>
+</LinearLayout>

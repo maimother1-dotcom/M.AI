@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  PRD 18.2. Wallet balances, the share ledger and auth material are never
+  included in cloud backup or device-to-device transfer. The server is the
+  record of what a user is owed; a restored backup must not be able to
+  reintroduce a stale balance.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="database" path="alarmx.db" />
+        <exclude domain="sharedpref" path="auth.xml" />
+        <exclude domain="sharedpref" path="wallet.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="database" path="alarmx.db" />
+        <exclude domain="sharedpref" path="auth.xml" />
+        <exclude domain="sharedpref" path="wallet.xml" />
+    </device-transfer>
+</data-extraction-rules>

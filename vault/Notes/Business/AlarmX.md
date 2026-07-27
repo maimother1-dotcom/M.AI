@@ -116,11 +116,23 @@ Also added: rate limits (OTP abuse is a direct SMS bill), a rule that no debug s
 
 **What it could not test, and says so in its own output:** no backend and no Android build exist, so IDOR, privilege escalation, JWT handling, SQL injection, Play Integrity and the payment rail are specified and unverified. A human security review before launch is a task, not an optional extra.
 
+## The first real code
+
+**The Kotlin domain core builds and passes 28 tests on the JVM.** It is deliberately pure Kotlin with no Android dependencies, so every rule that can lose money — integer paise with floor-and-carry, the share ladder in basis points, the server-side day boundary, the credit engine — is in the one module that can actually be compiled and tested anywhere. Including a randomised property test that the engine never pays more than the entitlement, across 200 trials of mixed tiers, jackpots, fill failures and replays.
+
+**The backend builds and passes 51 tests.** TypeScript, bigint money, and a real ECDSA round-trip for the AdMob callback using a generated keypair rather than a mock. Change one character of the query and verification fails. That single test is the no-loss guarantee, executed rather than asserted.
+
+**A parity test keeps the two in step.** The TypeScript suite reads the Kotlin source and fails if a share tier, the daily ceiling, the money resolution or the minimum day gap ever drifts apart. Confirmed by breaking it on purpose. The Android copy is advisory; the server decides what is actually paid.
+
+**The Android app layer does not compile here**, and that is stated rather than glossed. The SDK cannot be installed in this environment, so those files are reviewed source no compiler has seen. The module is excluded from the Gradle build so the core stays green for a real reason. `android/README.md` lists precisely what is written and what is missing.
+
+Two bugs were caught by tests during the build, both worth remembering. Millipaise was too coarse a unit — one ad view is 10.56 paise, which is not a whole number of tenths — so money moved to micropaise where it is exactly 10,560. And the security scanner started failing against its own rule definitions, which was a genuine self-reference flaw rather than a false alarm.
+
 ## Status
 
-Economics modelled, PRD at v0.6, prototype built and tested — **307 checks passing** (216 browser, 38 astronomy, 19 cross-validation, 34 security). The suite proves the safety property directly: an unverified view credits nothing, a total fill failure pays ₹0, half the views pay half the money, and a 26-day month pays on every day. The engine gets Puthandu, Poila Boishakh and Thai Pongal right across two years, including the sunset rule that moves Pongal from the 14th to the 15th in 2027.
+Economics modelled, PRD at v0.6, prototype tested, and the first shippable code written — **407 checks passing** (28 Kotlin core, 51 backend, 216 browser, 38 astronomy, 19 cross-validation, 55 security). The suite proves the safety property directly: an unverified view credits nothing, a total fill failure pays ₹0, half the views pay half the money, and a 26-day month pays on every day. The engine gets Puthandu, Poila Boishakh and Thai Pongal right across two years, including the sunset rule that moves Pongal from the 14th to the 15th in 2027.
 
-Not started: native Android build, PSP integration, brand partnerships, backend fraud service. Not verified: the 60-date almanac cross-check, every drik date that is not the new year, every tithi and nakshatra, and the Tamil 60-year cycle spellings.
+Not started: the Android UI and data layers, PSP integration, brand partnerships, AdMob account and mediation. Not verified: the 60-date almanac cross-check, every drik date that is not the new year, every tithi and nakshatra, and the Tamil 60-year cycle spellings.
 
 ## Links
 
