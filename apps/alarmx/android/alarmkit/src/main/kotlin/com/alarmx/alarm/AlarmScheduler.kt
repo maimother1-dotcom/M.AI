@@ -1,4 +1,4 @@
-package com.alarmx.app.alarm
+package com.alarmx.alarm
 
 import android.app.AlarmManager
 import android.app.PendingIntent
@@ -27,7 +27,15 @@ import android.provider.Settings
  *  3. Re-armed on boot by [BootReceiver], because `AlarmManager` state does not
  *     survive a restart and a phone that reboots overnight is common.
  */
-class AlarmScheduler(private val context: Context) {
+class AlarmScheduler(
+    private val context: Context,
+    /** Opened when the user taps the status-bar alarm chip. Injected so this
+     *  module carries no dependency on the app's UI. */
+    private val showActivity: Class<*>,
+    /** Broadcast target. Injected for the same reason, and so tests can assert
+     *  exactly what was scheduled. */
+    private val receiver: Class<*>,
+) {
 
     private val manager = context.getSystemService(AlarmManager::class.java)
 
@@ -50,14 +58,14 @@ class AlarmScheduler(private val context: Context) {
         val fire = PendingIntent.getBroadcast(
             context,
             alarmId.toInt(),
-            Intent(context, AlarmReceiver::class.java).putExtra(EXTRA_ALARM_ID, alarmId),
+            Intent(context, receiver).putExtra(EXTRA_ALARM_ID, alarmId),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         // The "show" intent is what the user taps from the status bar clock.
         val show = PendingIntent.getActivity(
             context,
             alarmId.toInt(),
-            Intent(context, Class.forName("com.alarmx.app.ui.MainActivity")),
+            Intent(context, showActivity),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         manager.setAlarmClock(AlarmManager.AlarmClockInfo(triggerAtMillis, show), fire)
@@ -67,7 +75,7 @@ class AlarmScheduler(private val context: Context) {
         PendingIntent.getBroadcast(
             context,
             alarmId.toInt(),
-            Intent(context, AlarmReceiver::class.java),
+            Intent(context, receiver),
             PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
         )?.let { manager.cancel(it); it.cancel() }
     }

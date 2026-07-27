@@ -7,9 +7,42 @@ Read this before assuming anything in this directory works.
 | Module | State | Verified how |
 |---|---|---|
 | **`core/`** | **Builds and tests.** Pure Kotlin, zero Android dependencies. | `gradle :core:test` — **28 tests passing** |
+| `alarmkit/` | Source **and 13 Robolectric tests written**. Cannot run here. | Nothing. See below. |
 | `app/` | **Source only. Does not compile in this repo's environment.** | Nothing. See below. |
 
-`app/` is **excluded from `settings.gradle.kts` on purpose**, so `gradle :core:test` stays honestly green rather than failing for a reason unrelated to the code.
+`alarmkit/` and `app/` are **excluded from `settings.gradle.kts` on purpose**, so `gradle :core:test` stays honestly green rather than failing for a reason unrelated to the code.
+
+## Can this be run on an emulator?
+
+**No, and not for one reason but three.** All checked rather than assumed:
+
+| Requirement | Result |
+|---|---|
+| `/dev/kvm` | Absent |
+| CPU virtualisation flags (`vmx`/`svm`) | None — an emulator would fall back to full software translation |
+| `dl.google.com/android/repository` (SDK, emulator, system images) | HTTP 000, blocked |
+| `dl.google.com/dl/android/maven2` (AGP, AndroidX, Compose, Room, Firebase) | HTTP 000, blocked |
+| `repo1.maven.org` | HTTP 200, reachable |
+| Ubuntu's `android-sdk-platform-23` | Installs, but API 23 — this code needs API 26+ |
+
+So: no emulator, and no way to build an APK to put on one.
+
+### The Robolectric attempt, and why it also failed
+
+Robolectric runs real Android framework code **on the JVM with no emulator and no KVM**, and its `android-all` jars *are* on Maven Central (up to Android 16). That looked like a genuine route, so `alarmkit/` was split out of `app/`: `AlarmScheduler` had its dependencies on app classes replaced with injected `Class<*>` parameters precisely so it could be tested in isolation, and **13 Robolectric tests were written** against it.
+
+It does not run here. Robolectric itself depends on `androidx.test:monitor`, which is published **only** on Google's Maven. Checked: not on Maven Central at any version, and jitpack is blocked too.
+
+**The refactor and the tests are kept, not reverted.** On any machine that can reach `dl.google.com`, add `include(":alarmkit")` to `settings.gradle.kts` and `gradle :alarmkit:test` runs as written. They assert the things that decide whether the alarm rings at all:
+
+- something actually reaches `AlarmManager`
+- it uses `setAlarmClock` (Doze-exempt, survives App Standby) rather than a throttleable exact alarm
+- the trigger time is exact, and the alarm id travels with the broadcast
+- rescheduling one id replaces rather than duplicating, so nobody is woken twice
+- cancelling removes it, and cancelling an unset alarm is harmless
+- a past trigger time is refused rather than silently never firing
+- **without exact-alarm permission it throws instead of pretending the alarm is armed**
+- the `PendingIntent` is immutable
 
 ### Why `app/` does not build here
 
@@ -56,7 +89,7 @@ The 28 tests include a randomised property test asserting the engine **never pay
 
 The reliability- and security-critical paths, and only those:
 
-- **`alarm/AlarmScheduler.kt`** — `setAlarmClock`, not `setExactAndAllowWhileIdle`. It is the only API the OS treats as a user-visible alarm: exempt from Doze, survives App Standby, visible in the status bar. Checks `canScheduleExactAlarms()` and refuses to pretend an alarm is armed when it is not.
+- **`../alarmkit/.../AlarmScheduler.kt`** — moved out of `app/` so it can be tested in isolation. `setAlarmClock`, not `setExactAndAllowWhileIdle`. It is the only API the OS treats as a user-visible alarm: exempt from Doze, survives App Standby, visible in the status bar. Checks `canScheduleExactAlarms()` and refuses to pretend an alarm is armed when it is not.
 - **`alarm/AlarmRingService.kt`** — foreground service, `USAGE_ALARM` audio so it ignores media volume, wake lock bounded by the five-minute maximum. **Rings until dismissed.** The ten seconds is only the reward window.
 - **`alarm/BootReceiver.kt`** + **`RescheduleWorker.kt`** — alarms do not survive a reboot, and phones reboot overnight. Returns `Result.failure()` rather than silently not re-arming.
 - **`ui/RingActivity.kt`** — **contains no ad code and never will.** PRD 4.6.
