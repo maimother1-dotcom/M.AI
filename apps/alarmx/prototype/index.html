@@ -251,7 +251,8 @@
    In production the trigger is AdMob's server-side verification callback
    (PRD 8.3); here creditAdView(source, verified) simulates it.
    --------------------------------------------------------------------------- */
-const AD_VALUE = 0.1056;        // Rs per verified rewarded view (base eCPM, 80% fill)
+const AD_VALUE_MP = 105.6;      // MILLIPAISE per verified view (base eCPM, 80% fill)
+const AD_VALUE = AD_VALUE_MP / 1000;   // Rs, for display only
 const VIEW_CEILING = 20;        // PRD 2 — daily, replaces the old monthly cap
 const SHARE_BASE = 0.50;        // days 1-6
 const SHARE_7 = 0.55;           // day 7+ streak
@@ -326,10 +327,13 @@ const S = {
   qrCode: "", alarmTask: "math", alarmDifficulty: "normal", alarmArmed: false,
   alarmDoneToday: false, spinUsedToday: false,
   dripIdx: 0, dripDoneToday: false,
-  rewardedToday: 0,
+  rewardedToday: 0, spinBonus: 0,
   /* PRD 2 — every credited view is logged with the value it actually earned,
      so the Daily Close receipt is computed and never typed. */
-  ledger: [], lifetimeEarned: 0,
+  ledger: [], lifetimeEarned: 0, lastDayStartMs: 0,
+  /* Money is held in integer paise. carryMP is the sub-paisa remainder in
+     millipaise, so rounding down never quietly loses the user money either. */
+  withdrawablePaise: 0, lifetimePaise: 0, carryMP: 0,
   setsDone: 0, tranche: 0, mathInSet: 0, setAdsSeen: 0,
   fillFailure: false,
   missionsDone: [], missionsShown: false,
@@ -524,16 +528,32 @@ function toast(msg){
 /* Which share the user is on. Read server-side in production — the client
    never sends its own tier. */
 function shareTier(){
-  if (S.lifetimeEarned < FIRST_MIN) return { pct: SHARE_BOOST, key: "boost" };
-  if (S.streak >= 30) return { pct: SHARE_30, key: "s30" };
-  if (S.streak >= 7)  return { pct: SHARE_7,  key: "s7" };
-  return { pct: SHARE_BASE, key: "base" };
+  const bonus = 1 + (S.spinBonus || 0);   // one-day multiplier from the spin
+  if (S.lifetimeEarned < FIRST_MIN) return { pct: SHARE_BOOST * bonus, key: "boost" };
+  if (S.streak >= 30) return { pct: SHARE_30 * bonus, key: "s30" };
+  if (S.streak >= 7)  return { pct: SHARE_7 * bonus,  key: "s7" };
+  return { pct: SHARE_BASE * bonus, key: "base" };
 }
 function nextTier(){
   if (S.lifetimeEarned < FIRST_MIN) return null;
   if (S.streak < 7)  return { at: 7,  pct: SHARE_7 };
   if (S.streak < 30) return { at: 30, pct: SHARE_30 };
   return null;
+}
+/* PRD 18.4 — THE DAY BOUNDARY IS SERVER-SIDE.
+   "Local midnight" is meaningless if the device decides what local means. A
+   user who changes the phone timezone can roll the day over repeatedly, which
+   defeats the 20-view ceiling, the >=7 distinct-alarm-days gate (the
+   load-bearing anti-farming control) and the streak ladder in one move.
+   In production S.day comes from the server, derived from a timezone pinned
+   at signup, and a rollover inside 20 hours of the previous one is rejected.
+   The prototype models that by refusing a client-driven rollover that arrives
+   too soon, so the invariant is visible rather than assumed. */
+const MIN_DAY_GAP_MS = 20 * 3600 * 1000;
+function serverDayRollover(nowMs){
+  if (S.lastDayStartMs && nowMs - S.lastDayStartMs < MIN_DAY_GAP_MS) return false;
+  S.lastDayStartMs = nowMs;
+  return true;
 }
 function todayEntries(){ return S.ledger.filter(e => e.day === S.day); }
 function viewsToday(){ return todayEntries().filter(e => e.verified).length; }
@@ -553,12 +573,25 @@ function creditAdView(source, verified){
     addXP(5, t("adCeiling"));
     return 0;
   }
-  const gross = AD_VALUE;
+  /* MONEY IS INTEGER PAISE, ROUNDED DOWN, WITH A CARRY.
+     A verified view is worth Rs0.0528 at the base share. Rounding that UP to
+     the paisa leaks Rs0.0072 a view — Rs1.73 to Rs3.45 per user per month,
+     against a Conservative-column profit of Rs3.30. Rounding up would turn
+     the whole no-loss guarantee negative at the daily ceiling.
+     So: floor to whole paise, keep the remainder in a per-user carry, and
+     pay it out once it reaches a paisa. Exact over time, never overpaid. */
   const pct = shareTier().pct;
-  const credit = gross * pct;
-  S.ledger.push({ day: S.day, source, verified: true, gross, pct, credit });
-  S.withdrawable += credit;
-  S.lifetimeEarned += credit;
+  const exactMP = AD_VALUE_MP * pct;              // millipaise
+  const poolMP = S.carryMP + exactMP;
+  const paise = Math.floor(poolMP / 10);          // 10 millipaise = 1 paisa
+  S.carryMP = poolMP - paise * 10;
+  const credit = paise / 100;                     // rupees
+  const gross = AD_VALUE_MP / 1000;
+  S.ledger.push({ day: S.day, source, verified: true, gross, pct, credit, paise });
+  S.withdrawablePaise += paise;
+  S.lifetimePaise += paise;
+  S.withdrawable = S.withdrawablePaise / 100;
+  S.lifetimeEarned = S.lifetimePaise / 100;
   S.earnedThisCycle += credit;
   return credit;
 }
@@ -566,9 +599,12 @@ function creditAdView(source, verified){
 /* Kept for the non-ad rewards that still exist (referral, signup bonus).
    These are acquisition spend, not the revenue share — PRD 6.2. */
 function earn(amount, why){
+  const paise = Math.round(amount * 100);   // acquisition amounts are whole rupees
+  S.withdrawablePaise += paise;
+  S.lifetimePaise += paise;
+  S.withdrawable = S.withdrawablePaise / 100;
+  S.lifetimeEarned = S.lifetimePaise / 100;
   S.earnedThisCycle += amount;
-  S.withdrawable += amount;
-  S.lifetimeEarned += amount;
   toast("+" + inr(amount) + " — " + why);
   return amount;
 }
@@ -1128,9 +1164,14 @@ window.withdraw = () => {
   if (S.underReview){ toast(t("reviewPaused")); return; }
   if (!gatePassed()){ toast(t("daysGate", S.alarmDays, GATE_DAYS, inr(FIRST_MIN))); return; }
   if (S.withdrawable < currentMin()){ toast(t(S.hasWithdrawnEver ? "awayFromNext" : "awayFrom", inr(currentMin() - S.withdrawable))); return; }
-  const amt = S.withdrawable;
+  /* Atomic in production: idempotent on a client request id, with the balance
+     decremented under a row lock so a double-tap or race cannot pay twice.
+     PRD 18.4. */
+  const paise = S.withdrawablePaise;
+  const amt = paise / 100;
   const ref = "UPI" + Math.random().toString(36).slice(2, 10).toUpperCase();
   S.payouts.unshift({ amt, ref });
+  S.withdrawablePaise = 0;
   S.withdrawable = 0;
   const wasFirst = !S.hasWithdrawnEver;
   S.hasWithdrawnEver = true;
@@ -1140,12 +1181,17 @@ window.withdraw = () => {
 
 window.appeal = () => { S.underReview = false; toast(t("appealSent")); draw(); };
 
+/* PRD 4.3 — the spin awards a one-day SHARE MULTIPLIER, never a rupee prize.
+   A fixed prize is a promise against variable revenue, which is the failure
+   PRD 2 exists to remove. A multiplier applies to money that already arrived,
+   so even the jackpot cannot pay out what was never earned. */
+const SPIN_TABLE = [[0.05,.40],[0.10,.30],[0.20,.20],[0.40,.07],[1.00,.03]];
 window.spin = () => {
-  const table = [[0.25,.40],[0.5,.30],[1,.20],[2,.07],[5,.025],[25,.005]];
-  let r = Math.random(), acc = 0, prize = 0.25;
-  for (const [v, p] of table){ acc += p; if (r <= acc){ prize = v; break; } }
+  let r = Math.random(), acc = 0, bonus = SPIN_TABLE[0][0];
+  for (const [v, p] of SPIN_TABLE){ acc += p; if (r <= acc){ bonus = v; break; } }
   S.spinUsedToday = true;
-  earn(prize, t("spin"));
+  S.spinBonus = bonus;
+  toast(t("spinWon", Math.round(bonus * 100)));
   draw();
 };
 
@@ -1296,7 +1342,7 @@ function devbar(){
     <button onclick="nextDay()">+Day</button>
     <button onclick="nextCycle()">+Month</button>
     <button onclick="S.alarmDays=7;draw()">7 days</button>
-    <button onclick="S.withdrawable=30;S.lifetimeEarned=30;draw()">₹30</button>
+    <button onclick="S.withdrawablePaise=3000;S.lifetimePaise=3000;S.withdrawable=30;S.lifetimeEarned=30;draw()">₹30</button>
     <button onclick="S.underReview=true;draw()">Flag</button>
     <button onclick="S.festival=!S.festival;draw()">Fest</button>
     <button onclick="go('math')">Math</button>
@@ -1335,9 +1381,15 @@ window.cycleLang = () => {
   draw();
 };
 window.nextDay = () => {
+  /* Dev bar simulates the passage of a real day, so it advances the clock the
+     server would have seen. A client that simply asked for a new day without
+     the time having passed is what serverDayRollover() refuses. */
+  if (!serverDayRollover(Date.now() + S.day * 86400000)){
+    toast(t("dayTooSoon")); return;
+  }
   S.day++; S.alarmDoneToday = false; S.spinUsedToday = false;
   S.dripDoneToday = false; S.missionsDone = []; S.missionsShown = false;
-  S.rewardedToday = 0;
+  S.rewardedToday = 0; S.spinBonus = 0;
   S.setsDone = 0; S.tranche = 0; S.mathInSet = 0; S.setAdsSeen = 0;
   newMathQ();
   draw();
@@ -1345,7 +1397,7 @@ window.nextDay = () => {
 window.nextCycle = () => {
   S.day = 1; S.earnedThisCycle = 0; S.pot = POT_START; S.misses = 0;
   S.alarmDoneToday = false; S.spinUsedToday = false; S.dripDoneToday = false;
-  S.missionsDone = []; S.missionsShown = false; S.rewardedToday = 0;
+  S.missionsDone = []; S.missionsShown = false; S.rewardedToday = 0; S.spinBonus = 0;
   S.setsDone = 0; S.tranche = 0; S.mathInSet = 0; S.setAdsSeen = 0;
   S.ledger = []; newMathQ();
   draw();

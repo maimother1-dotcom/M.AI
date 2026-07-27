@@ -18,9 +18,10 @@ This directory holds the design work — the economics that make a loss impossib
 | `prototype/index.html` | Interactive prototype. Open in a browser, no setup. |
 | `prototype/i18n.js` | Every user-facing string, in five locales |
 | `prototype/panchang.js` | Regional calendar engine — tithi, nakshatra, three Bengali/Tamil calendar systems |
-| `tests/verify_prototype.py` | 208-check browser suite |
+| `tests/verify_prototype.py` | 216-check browser suite |
 | `tests/verify_panchang.js` | 38-check astronomy suite, runs in node |
 | `tests/verify_bengali_cross.js` | 19-check cross-validation against two independent Bengali calendar implementations |
+| `tests/verify_security.py` | 34-check security audit — secrets, PII, money safety, attacker paths |
 | `tests/reference/` | Frozen reference data and its provenance |
 
 ---
@@ -122,6 +123,26 @@ Also specified in PRD §11: offline-first alarms, APK under 15MB, 2GB RAM target
 
 ---
 
+## Security
+
+A five-check audit (Gitleaks, Bearer, ECC Production Audit, Trail of Bits, ECC Security Review) was run against the repository. `tests/verify_security.py` re-runs it as assertions that fail the build, and PRD §18 carries the requirements.
+
+**No secrets anywhere**, in HEAD or in history. The scanner gates on entropy plus digit content, and **proves it works on three planted keys** rather than asserting a clean scan into the void — an earlier version silently missed AWS keys because it also demanded mixed case, and the self-test is what caught that.
+
+Three real findings, all fixed:
+
+**Money was floating-point.** A verified view is worth ₹0.0528. Rounding that up to the paisa leaks ₹0.0072 a view — **₹1.73 to ₹3.45 per user per month against a Conservative profit of ₹3.30.** At the daily ceiling it turns the no-loss guarantee negative. Money is now **integer paise, floored, with a sub-paisa carry**: exact over time, never overpaid at any moment.
+
+**The day boundary was client-controlled.** "Local midnight" is meaningless when the device decides what local means. Changing the phone's timezone rolls the day repeatedly, defeating the 20-view ceiling, the streak ladder, and — worst — the **≥7 distinct alarm-days gate**, which is the load-bearing anti-farming control. The boundary is now server-side from a timezone pinned at signup, and a rollover inside 20 hours is refused.
+
+**Self-referral was unaddressed.** ₹5 to each side, ₹10 per fake pair, with nothing tying referrer and referee to different humans. Now: the bonus pays only after the referee's own first payout to a **different VPA**, one bonus per device pair ever, and a cap of 10 paid referrals per account per month.
+
+Also added: rate limits (OTP abuse is a direct SMS bill), a rule that **no debug surface ships** — the prototype's DEV bar can set your streak to 30 and fill the wallet — security headers, and an account deletion path.
+
+**What the audit could not test, and says so in its own output:** there is no backend and no Android build, so IDOR, privilege escalation, JWT handling, SQL injection, Play Integrity and the payment rail are **specified and unverified**. No automated audit replaces a human security review for an app that moves real money.
+
+---
+
 ## The daily loop — three touches, one habit
 
 **Morning: the alarm.** Rings until dismissed. Completing it unlocks the day.
@@ -217,12 +238,13 @@ Worth doing in this order:
 
 ```bash
 pip install playwright
-python3 tests/verify_prototype.py       # 208 checks, browser
+python3 tests/verify_prototype.py       # 216 checks, browser
 node tests/verify_panchang.js           # 38 checks, no dependencies
 node tests/verify_bengali_cross.js      # 19 checks, no dependencies
+python3 tests/verify_security.py        # 34 checks, security audit
 ```
 
-**265 checks, all passing as of this commit.**
+**307 checks, all passing as of this commit.**
 
 `verify_prototype.py` covers the share mechanism (an unverified view credits nothing, a fill failure pays ₹0, half the views pay half the money), the share tiers, the 20-view daily ceiling, a 26-day simulation asserting every day pays, the math section's alarm lock and ad cadence, the Daily Close receipt matching the ledger, locale parity across all five languages, the three Bengali/Tamil calendar systems, Indian number grouping, the alarm reward window, QR validation, the 4x2 widget, ad placement, and every regression from v0.2.
 

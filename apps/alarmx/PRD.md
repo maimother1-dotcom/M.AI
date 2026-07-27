@@ -697,3 +697,91 @@ It may raise active days per month (base case 26), which would raise revenue and
 **Resolved in v0.4:** which regional languages come next (§12 — `bn` and `ta`, pulled in by the panjika rather than guessed from install geography).
 
 **Resolved in v0.3:** the ₹30-minimum vs cap conflict (§6.2 — ₹10 first payout, booked as acquisition), and the launch language question (§12 — Hinglish default).
+
+---
+
+## 18. Security requirements
+
+Derived from a five-check audit (Gitleaks, Bearer, ECC Production Audit, Trail of Bits, ECC Security Review) run against the repository on 26th July 2026. `tests/verify_security.py` re-runs it as assertions that fail the build.
+
+**Scope, stated honestly.** There is no backend and no Android build yet, so nothing below has been tested against a live endpoint. These are build requirements, not verified properties. Where a check could not be run, the test file says so in its own output.
+
+### 18.1 Secrets
+
+No secret exists as a literal anywhere in the repository, including comments and config. `.env` is gitignored; `*.env.template` documents the required variables with placeholders only. Firebase and PSP service keys are **server-side only** — never in the APK, which must be assumed decompiled on day one. A secret that was ever committed is compromised even after removal: rotate it, do not just delete the line.
+
+### 18.2 Personal data
+
+The app collects a phone number (auth), banded survey answers, and device signals for fraud. It must not log any of them. No PII in logs, crash reports, analytics payloads or API responses beyond what the client needs. Survey answers are consented separately and optionally (§5), and **account deletion removes or anonymises everything within 30 days**, exposed in-app and at a public URL as Play now requires.
+
+### 18.3 Money is integer paise, rounded down, with a carry
+
+**This is a finding, not a style preference.** A verified view is worth ₹0.0528 at the base share. Rounding that up to the paisa leaks ₹0.0072 a view — **₹1.73 to ₹3.45 per user per month** against a Conservative-column profit of **₹3.30**. At the daily ceiling it turns the whole no-loss guarantee negative.
+
+Requirements:
+
+- All balances are **integer paise**. No float ever holds money.
+- Credits are computed in millipaise and **floored** to whole paise.
+- The dropped remainder is kept in a per-user carry and paid once it reaches a paisa — exact over time, never overpaid at any single moment.
+- No `ceil` or `round` on any money path. The only rounding on money is downward.
+
+### 18.4 The day boundary is server-side
+
+**Finding.** "Local midnight" (§7.4) is meaningless if the device decides what local means. A user who changes the phone's timezone can roll the day over repeatedly, and that defeats three controls at once: the 20-view daily ceiling (§2), the ≥7 **distinct alarm-days** gate (§6.3), and the streak share ladder (§2). The 7-day gate is the load-bearing anti-farming control in the product, and this bypasses it in an afternoon.
+
+Requirements:
+
+- The day boundary is computed **server-side** from a timezone **pinned at signup**.
+- Changing it is allowed (people move) but rate-limited: at most one change per 14 days, and it never retroactively creates a new earning day.
+- The server rejects any day rollover occurring **less than 20 hours** after the previous one, regardless of what the client claims.
+- Alarm-day counting uses server-received timestamps, never device clock values.
+
+### 18.5 No debug surface ships
+
+The prototype has a **DEV bar** that can set the streak to 30, fill the wallet and unlock the payout gate. That is correct for a design artefact and must never exist in a build that touches real money.
+
+- Debug builds are a separate build type. The release build contains no debug menu, no test endpoint (`/test`, `/debug`, `/seed`), no hardcoded test account.
+- Debug flags default **off** and are compiled out, not merely hidden.
+- No error returned to a client carries a stack trace, query text, file path or internal hostname. Clients get a generic message and a correlation ID; detail goes to server logs.
+
+### 18.6 Rate limits
+
+**Finding: OTP abuse is a direct cash loss**, because SMS is a real per-message cost and a modelled line in the economics. Minimums:
+
+| Endpoint | Limit |
+|---|---|
+| OTP request | 3 per number per hour, 10 per IP per hour |
+| Login | 5 per minute per IP |
+| Withdrawal request | 3 per user per day |
+| SSV callback | per-account view ceiling of 20/day (§2), enforced server-side |
+| Referral claim | see §18.7 |
+| Account creation | 3 per device per week |
+
+### 18.7 Referral abuse and self-referral
+
+**Finding.** §13 pays ₹5 to both sides once the referee completes 7 alarm-days. Nothing currently prevents **self-referral** — a user referring themselves from a second number and device. That is ₹10 per fake pair, and "refer myself" is a named attack path in the audit.
+
+Requirements:
+
+- The referral bonus pays only after the referee's **own first successful UPI payout**, to a **different VPA** from the referrer's.
+- One bonus per (referrer device, referee device) pair, ever.
+- Referrer and referee must not share device ID, Play Integrity device hash, or payment instrument.
+- **Maximum 10 paid referrals per account per month**, and referral spend is capped as a share of the acquisition budget rather than being unbounded.
+
+### 18.8 Payment and callback integrity
+
+- **AdMob SSV is the only credit trigger** (§8.3): signature-verified, idempotent on transaction ID, replay-proof.
+- **Withdrawals are idempotent** on a client-supplied request ID, with the balance decremented under a row lock so a double-tap or concurrent request cannot pay twice.
+- No credit or payout amount may be negative or zero-cost to request. Server recomputes every amount; the client never supplies one.
+- PSP webhooks are signature-verified before any state change.
+- Every reward event is written to an immutable audit log **before** the wallet is credited, and settlement is reconciled against the PSP daily.
+
+### 18.9 Transport and headers
+
+TLS everywhere, database connections included. On every HTTP response: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Strict-Transport-Security` at one year, and a Content-Security-Policy restricting scripts to our own origin. CORS restricted to the app's own origins, never `*`.
+
+### 18.10 What is still untested
+
+No backend exists, so IDOR, privilege escalation, JWT handling, SQL injection, file-upload handling and CORS are **specified and unverified**. Play Integrity, SSV wiring and keystore handling are likewise untested. **Book a human security review before launch** — this app moves real money to real bank accounts and holds DPDP-regulated data, and no automated audit substitutes for that.
+
+---

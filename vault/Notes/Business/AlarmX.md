@@ -98,9 +98,27 @@ Three touches, one habit. **Morning:** the alarm, which unlocks the day. **Throu
 
 The Daily Close is the best idea in the design. It shows what was earned today with the receipt — how many verified views, what share, how many rupees. Every reward app in this category hides that arithmetic, which is exactly why nobody believes them. AlarmX can show its working because its working is honest, and the receipt is computed from the ledger rather than typed.
 
+## Security audit
+
+A five-check audit was run against the repo — secrets, personal data flow, pre-deploy, payment logic, attacker paths. It is now `tests/verify_security.py`, 34 assertions that fail the build rather than a report nobody re-reads.
+
+**No secrets, in HEAD or history.** The scanner proves it works on three planted keys instead of asserting a clean scan into the void. An earlier version of it silently missed AWS keys, and the self-test is what caught that.
+
+Three real findings, all fixed:
+
+**Money was floating-point.** A verified view is worth ₹0.0528. Rounding up to the paisa leaks ₹0.0072 a view — ₹1.73 to ₹3.45 per user per month against a Conservative profit of ₹3.30. At the daily ceiling that turns the no-loss guarantee negative. Money is now integer paise, floored, with a sub-paisa carry.
+
+**The day boundary was client-controlled.** "Local midnight" means nothing when the phone decides what local is. A timezone change rolls the day repeatedly and defeats the 20-view ceiling, the streak ladder, and the 7-day payout gate — which is the load-bearing anti-farming control. Now server-side from a timezone pinned at signup, with rollovers inside 20 hours refused.
+
+**Self-referral was unaddressed.** ₹5 each side, ₹10 a fake pair, nothing tying the two accounts to different people. Now the bonus needs the referee's own first payout to a different VPA, one per device pair ever, 10 a month maximum.
+
+Also added: rate limits (OTP abuse is a direct SMS bill), a rule that no debug surface ships, security headers, and account deletion.
+
+**What it could not test, and says so in its own output:** no backend and no Android build exist, so IDOR, privilege escalation, JWT handling, SQL injection, Play Integrity and the payment rail are specified and unverified. A human security review before launch is a task, not an optional extra.
+
 ## Status
 
-Economics modelled, PRD at v0.6, prototype built and tested — **265 checks passing** (208 browser, 38 astronomy, 19 cross-validation). The suite proves the safety property directly: an unverified view credits nothing, a total fill failure pays ₹0, half the views pay half the money, and a 26-day month pays on every day. The engine gets Puthandu, Poila Boishakh and Thai Pongal right across two years, including the sunset rule that moves Pongal from the 14th to the 15th in 2027.
+Economics modelled, PRD at v0.6, prototype built and tested — **307 checks passing** (216 browser, 38 astronomy, 19 cross-validation, 34 security). The suite proves the safety property directly: an unverified view credits nothing, a total fill failure pays ₹0, half the views pay half the money, and a 26-day month pays on every day. The engine gets Puthandu, Poila Boishakh and Thai Pongal right across two years, including the sunset rule that moves Pongal from the 14th to the 15th in 2027.
 
 Not started: native Android build, PSP integration, brand partnerships, backend fraud service. Not verified: the 60-date almanac cross-check, every drik date that is not the new year, every tithi and nakshatra, and the Tamil 60-year cycle spellings.
 

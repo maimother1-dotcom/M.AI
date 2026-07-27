@@ -81,10 +81,12 @@ const STRINGS = {
     disarm: "Hatao (task phir se chun sakte ho)",
 
     spin: "Roz ka spin",
-    spinNote: "Average lagbhag {0}, kabhi zero nahi.",
+    spinNote: "Hissa badhta hai, paise nahi milte. Jo kamaya us par lagta hai.",
     spinLocked: "Alarm poora karo tab khulega. Har rupaya ek asli subah se juda hai.",
     spinUnlocked: "Khul gaya — aaj ka alarm ho gaya.",
     spinDone: "Aaj spin ho gaya — kal aana",
+    spinWon: "Aaj tumhara hissa +{0}% — jo kamaoge us par.",
+    dayTooSoon: "Naya din abhi shuru nahi hua. Server ke hisaab se time chalta hai, phone ke nahi.",
     spinBtn: "Spin karo",
 
     missions: "Subah ke mission",
@@ -283,10 +285,12 @@ const STRINGS = {
     disarm: "Disarm (unlocks the task choice)",
 
     spin: "Daily spin",
-    spinNote: "Averages about {0}, floor never zero.",
+    spinNote: "It raises your share for the day, it does not hand out cash. It applies to what you actually earn.",
     spinLocked: "Locked until you complete an alarm. Every rupee traces to a real wake-up.",
     spinUnlocked: "Unlocked — you completed today's alarm.",
     spinDone: "Spun today — back tomorrow",
+    spinWon: "Your share is +{0}% today, on whatever you earn.",
+    dayTooSoon: "The day has not turned over yet. The server keeps the time, not the phone.",
     spinBtn: "Spin",
 
     missions: "Morning missions",
@@ -485,10 +489,12 @@ const STRINGS = {
     disarm: "हटाएँ (टास्क फिर चुन सकते हैं)",
 
     spin: "रोज़ का स्पिन",
-    spinNote: "औसत लगभग {0}, कभी शून्य नहीं।",
+    spinNote: "यह दिन भर के लिए आपका हिस्सा बढ़ाता है, नकद नहीं देता। जो आप वाकई कमाते हैं उसी पर लगता है।",
     spinLocked: "अलार्म पूरा करें तब खुलेगा। हर रुपया एक असली सुबह से जुड़ा है।",
     spinUnlocked: "खुल गया — आज का अलार्म हो गया।",
     spinDone: "आज स्पिन हो गया — कल आएँ",
+    spinWon: "आज आपका हिस्सा +{0}% — जो भी कमाएँ उस पर।",
+    dayTooSoon: "नया दिन अभी शुरू नहीं हुआ। समय सर्वर तय करता है, फ़ोन नहीं।",
     spinBtn: "स्पिन करें",
 
     missions: "सुबह के मिशन",
@@ -687,10 +693,12 @@ const STRINGS = {
     disarm: "বন্ধ করুন (কাজ আবার বদলানো যাবে)",
 
     spin: "দৈনিক স্পিন",
-    spinNote: "গড়ে প্রায় {0}, কখনও শূন্য নয়।",
+    spinNote: "এটা দিনের জন্য আপনার ভাগ বাড়ায়, নগদ দেয় না। আপনি যা সত্যিই আয় করেন তার উপরেই বসে।",
     spinLocked: "অ্যালার্ম শেষ না করা পর্যন্ত বন্ধ। প্রতিটা টাকা সত্যিকারের ঘুম-ভাঙার সঙ্গে জড়ানো।",
     spinUnlocked: "খুলে গেছে — আজকের অ্যালার্ম শেষ করেছেন।",
     spinDone: "আজ স্পিন হয়ে গেছে — কাল আবার",
+    spinWon: "আজ আপনার ভাগ +{0}% — যা আয় করবেন তার উপর।",
+    dayTooSoon: "নতুন দিন এখনও শুরু হয়নি। সময় সার্ভার ঠিক করে, ফোন নয়।",
     spinBtn: "স্পিন",
 
     missions: "সকালের মিশন",
@@ -889,10 +897,12 @@ const STRINGS = {
     disarm: "நிறுத்தவும் (பணித் தேர்வு மீண்டும் திறக்கும்)",
 
     spin: "தினசரி சுழற்சி",
-    spinNote: "சராசரியாக {0} அளவு, ஒருபோதும் பூஜ்யம் இல்லை.",
+    spinNote: "இது அன்றைய உங்கள் பங்கை உயர்த்துகிறது, பணம் தருவதில்லை. நீங்கள் உண்மையில் சம்பாதிப்பதற்கே பொருந்தும்.",
     spinLocked: "அலாரத்தை முடிக்கும் வரை பூட்டப்பட்டுள்ளது. ஒவ்வொரு ரூபாயும் உண்மையான விழிப்புடன் இணைந்தது.",
     spinUnlocked: "திறந்தது — இன்றைய அலாரத்தை முடித்துவிட்டீர்கள்.",
     spinDone: "இன்று சுழற்றியாகிவிட்டது — நாளை மீண்டும்",
+    spinWon: "இன்று உங்கள் பங்கு +{0}% — நீங்கள் சம்பாதிப்பதில்.",
+    dayTooSoon: "புதிய நாள் இன்னும் தொடங்கவில்லை. நேரத்தை சர்வர் தீர்மானிக்கிறது, ஃபோன் அல்ல.",
     spinBtn: "சுழற்று",
 
     missions: "காலைப் பணிகள்",

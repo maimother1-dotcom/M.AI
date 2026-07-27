@@ -28,6 +28,8 @@ Recurring every day. Drafts only, Bijoy approves before sending. See [[Notes/Pla
 - [ ] [P2] Measure whether users actually complete 4 rewarded videos a day once the app is live — the v0.5 cap rise rests on it — due: 60 days after launch
 - [ ] [P2] Pick the PSP (RazorpayX vs Cashfree) and confirm the real per-payout rate at expected volume — due: 5th August 2026
 - [ ] [P2] Legal review of the DPDP consent flow and the Play Store reward-app policy position — due: 9th August 2026
+- [ ] [P1] Book a human security review before launch — the automated audit explicitly cannot test IDOR, privilege escalation, JWT handling or the payment rail because none of them exist yet, and this app moves real money — due: before any public release
+- [ ] [P2] Build the account deletion flow and publish the deletion URL Play now requires — due: 23rd August 2026
 - [ ] [P1] Test the alarm on a physical Redmi and a physical Realme before anything else ships — OEM battery killers are the biggest technical risk and emulators do not reproduce them — due: 5th August 2026
 - [ ] [P2] Get Hinglish strings read by 3 real students in the segment — tone has to sound like texting, not translated English — due: 7th August 2026
 - [ ] [P1] Cross-check 60 dates of computed panchang against a printed Vishuddha Siddhanta panjika and a Tamil daily calendar, Kolkata and Chennai — release blocker, wrong dates are worse than no dates — due: 16th August 2026

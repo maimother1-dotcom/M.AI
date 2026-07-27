@@ -46,6 +46,18 @@ Second: **a monthly cap creates the failure it is meant to prevent.** A user who
 
 Third, and the best product idea in the project: **show the arithmetic.** The Daily Close prints how many ads were verified, the share applied, and the rupees. Every competitor hides it, which is exactly why nobody believes them. Honesty is only available as a differentiator when the underlying maths is actually honest.
 
+Security lessons from the five-check audit, all reusable:
+
+**Never hold money in a float, and always round DOWN with a carry.** AlarmX credits ₹0.0528 a view. Rounding up leaks ₹1.73–₹3.45/user/month against a ₹3.30 profit — enough to invert the entire no-loss guarantee. Integer paise, floor, carry the remainder.
+
+**Any "local midnight" rule is a client-controlled clock until proven otherwise.** A timezone change was enough to farm AlarmX's 7-day payout gate, which was the load-bearing anti-farming control. Day boundaries belong on the server, from a timezone pinned at signup.
+
+**Make a scanner prove it catches something.** The secret scanner asserts against three planted keys. An earlier version required mixed case and therefore silently missed all-uppercase AWS keys — a clean scan would have looked identical. A detector nobody has seen fire is not evidence.
+
+**Entropy alone does not separate keys from prose.** Kebab-case like "dont-ask-for-cred-ids-already-connected" scores 3.68 bits/char. Digit content is the cheap discriminator.
+
+**Say what an audit could NOT test.** With no backend, IDOR and injection are unverifiable; the audit prints that in its own output rather than implying coverage it does not have.
+
 Decision principle worth reusing: **when a revenue lever collides with a safety promise, price the lever before arguing about it.** Bijoy proposed an ad before the alarm's math problem. Modelling it showed ₹0.73/user/month, worth ₹0.65 of cap — against delaying someone switching off a 5am alarm and handing Play a reward app that blocks an alarm. The number ended the argument in one line. Also: the better-behaved format was the more profitable one (rewarded eCPM $1.50 vs interstitial $0.40), which is common and worth checking before assuming a user-hostile placement pays.
 
 Related: **"we have several revenue sources" is not the same as diversification.** Ads are 61% of AlarmX base revenue, but zeroing the survey line still produces a negative Conservative cap. More lines did not reduce the risk, they moved it from a price Bijoy can negotiate to an eCPM Google sets. The revenue share is what finally removed it rather than moving it again.

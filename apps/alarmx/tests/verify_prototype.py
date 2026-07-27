@@ -185,7 +185,7 @@ with sync_playwright() as p:
 
     # ----------------------------------------------------------------- CAP
     section("THE MECHANISM: paid a share of revenue that already arrived (PRD 2)")
-    pg.evaluate("S.ledger=[];S.withdrawable=0;S.lifetimeEarned=20;S.streak=0;S.day=1;draw()")
+    pg.evaluate("S.ledger=[];S.withdrawable=0;S.withdrawablePaise=0;S.carryMP=0;S.spinBonus=0;S.lifetimeEarned=20;S.lifetimePaise=2000;S.streak=0;S.day=1;draw()")
     pg.wait_for_timeout(150)
 
     # THE load-bearing check of the entire design. In production the only
@@ -201,8 +201,25 @@ with sync_playwright() as p:
 
     pg.evaluate("creditAdView('math', true)"); pg.wait_for_timeout(120)
     credited = pg.evaluate("S.withdrawable") - before
-    check("a verified view credits exactly the share of its realised value",
-          abs(credited - 0.1056 * 0.50) < 1e-9, f"₹{credited:.4f}")
+    # Rounded DOWN to whole paise. Rounding up leaks ₹1.73–₹3.45/user/month
+    # against a Conservative profit of ₹3.30 — it would make the no-loss
+    # guarantee negative at the daily ceiling. PRD 18.3.
+    check("a verified view credits whole paise, ROUNDED DOWN, never up",
+          abs(credited - 0.05) < 1e-9 and credited < 0.1056 * 0.50,
+          f"₹{credited:.4f} (exact would be ₹{0.1056*0.5:.4f})")
+    check("the dropped sub-paisa is carried, not silently lost",
+          pg.evaluate("S.carryMP") > 0, f"carry {pg.evaluate('S.carryMP')} millipaise")
+    check("money is held as integer paise, never a float balance",
+          pg.evaluate("Number.isInteger(S.withdrawablePaise)")
+          and pg.evaluate("Number.isInteger(S.lifetimePaise)"))
+    over = pg.evaluate("""(() => {
+        S.ledger=[];S.withdrawablePaise=0;S.carryMP=0;S.streak=0;S.lifetimeEarned=20;S.day=1;
+        for (let i=0;i<20;i++) creditAdView('math', true);
+        return { paid: S.withdrawablePaise, exact: 20 * 105.6 * 0.5 / 10 };
+    })()""")
+    check("20 views never pay more than the exact entitlement",
+          over["paid"] <= over["exact"] + 1e-9,
+          f"paid {over['paid']}p vs exact {over['exact']:.2f}p")
     check("the ledger records gross, share and credit for the receipt",
           pg.evaluate("S.ledger[1].gross") > 0
           and pg.evaluate("S.ledger[1].pct") == 0.5
@@ -221,7 +238,7 @@ with sync_playwright() as p:
 
     section("NO LOSS IS POSSIBLE: the payout follows the revenue down")
     zero = pg.evaluate("""(() => {
-        S.ledger=[]; S.withdrawable=0; S.fillFailure=true;
+        S.ledger=[]; S.withdrawable=0; S.withdrawablePaise=0; S.fillFailure=true;
         for (let i=0;i<20;i++) creditAdView('math');
         const w = S.withdrawable; S.fillFailure=false; return w;
     })()""")
@@ -229,43 +246,67 @@ with sync_playwright() as p:
     check("and the app says so honestly rather than failing silently",
           pg.evaluate("S.ledger.filter(e => !e.verified).length") == 20)
     halved = pg.evaluate("""(() => {
-        S.ledger=[]; S.withdrawable=0; S.day=1;
+        S.ledger=[]; S.withdrawablePaise=0; S.carryMP=0; S.day=1;
         for (let i=0;i<10;i++) creditAdView('math', true);
-        return S.withdrawable;
+        return S.withdrawablePaise;
     })()""")
     full = pg.evaluate("""(() => {
-        S.ledger=[]; S.withdrawable=0; S.day=2;
+        S.ledger=[]; S.withdrawablePaise=0; S.carryMP=0; S.day=2;
         for (let i=0;i<20;i++) creditAdView('math', true);
-        return S.withdrawable;
+        return S.withdrawablePaise;
     })()""")
     check("half the views pay half the money — the payout tracks revenue",
-          abs(halved * 2 - full) < 1e-9, f"₹{halved:.3f} vs ₹{full:.3f}")
+          abs(halved * 2 - full) <= 1, f"{halved}p vs {full}p")
 
     section("DAILY CEILING replaces the monthly cap (PRD 2)")
-    pg.evaluate("S.ledger=[];S.withdrawable=0;S.day=3")
+    pg.evaluate("S.ledger=[];S.withdrawablePaise=0;S.carryMP=0;S.day=3")
     pg.evaluate("for(let i=0;i<40;i++) creditAdView('math', true)")
     check("the ceiling holds at 20 credited views a day",
           pg.evaluate("viewsToday()") == 20, str(pg.evaluate("viewsToday()")))
-    check("views beyond the ceiling credit nothing",
-          abs(pg.evaluate("earnedToday()") - 20 * 0.1056 * 0.5) < 1e-9)
+    # Exact entitlement for 20 views at the 50% share is ₹1.056. With floor+carry
+    # the user gets ₹1.05: never overpaid, never short by more than a paisa.
+    earned20 = pg.evaluate("earnedToday()")
+    exact20 = 20 * 0.1056 * 0.5
+    check("views beyond the ceiling credit nothing, and the carry stays exact",
+          earned20 <= exact20 + 1e-9 and exact20 - earned20 < 0.01,
+          f"₹{earned20:.2f} paid vs ₹{exact20:.4f} exact")
 
     # The failure a monthly cap creates: the app going dead mid-month.
     sim = pg.evaluate("""(() => {
-        S.ledger=[]; S.withdrawable=0; S.lifetimeEarned=20; S.streak=30;
+        S.ledger=[]; S.withdrawablePaise=0; S.carryMP=0; S.lifetimeEarned=20; S.streak=30;
         let paidDays = 0;
         for (let d=1; d<=26; d++){
             S.day = d;
-            let before = S.withdrawable;
+            let before = S.withdrawablePaise;
             for (let v=0; v<14; v++) creditAdView('math', true);
-            if (S.withdrawable > before) paidDays++;
+            if (S.withdrawablePaise > before) paidDays++;
         }
-        return { paidDays, total: S.withdrawable };
+        return { paidDays, total: S.withdrawablePaise / 100 };
     })()""")
     check("a full 26-day month pays on EVERY day — the app never goes dead",
           sim["paidDays"] == 26, f"{sim['paidDays']}/26 days paid")
     check("26 days at the top tier stays a sane monthly figure",
           15 < sim["total"] < 40, f"₹{sim['total']:.2f}/month")
-    pg.evaluate("S.ledger=[];S.day=1;S.streak=0;draw()"); pg.wait_for_timeout(150)
+    pg.evaluate("S.ledger=[];S.day=1;S.streak=0;S.spinBonus=0;draw()"); pg.wait_for_timeout(150)
+
+    section("DAY BOUNDARY: server-side, not the device clock (PRD 18.4)")
+    # Changing the phone timezone must not manufacture earning days. This is
+    # the control that protects the 20-view ceiling AND the 7-day payout gate.
+    pg.evaluate("S.lastDayStartMs = Date.now();")
+    rolled = pg.evaluate("serverDayRollover(Date.now() + 60000)")
+    check("a rollover requested minutes later is REFUSED", rolled is False,
+          "otherwise a timezone change farms the 7-day gate in an afternoon")
+    check("a rollover after a real day passes is accepted",
+          pg.evaluate("serverDayRollover(Date.now() + 21*3600*1000)") is True)
+    check("the minimum gap is 20 hours, not 24",
+          pg.evaluate("MIN_DAY_GAP_MS") == 20 * 3600 * 1000,
+          "an 8am Monday alarm then a 7am Tuesday alarm is 23h and must count")
+    before_day = pg.evaluate("S.day")
+    pg.evaluate("S.lastDayStartMs = Date.now() + S.day*86400000; nextDay()")
+    pg.wait_for_timeout(150)
+    check("the dev bar cannot skip the boundary either",
+          pg.evaluate("S.day") == before_day,
+          "the guard is in the state machine, not the UI")
 
     dash = pg.inner_text("#app")
     check("no withheld-balance dark patterns",
@@ -497,7 +538,8 @@ with sync_playwright() as p:
 
     # ------------------------------------------------ MATH SECTION + CLOSE
     section("MATH SECTION: locked behind the alarm (PRD 4.7)")
-    pg.evaluate("S.ledger=[];S.withdrawable=0;S.lifetimeEarned=20;S.streak=0;S.day=1;"
+    pg.evaluate("S.ledger=[];S.withdrawable=0;S.withdrawablePaise=0;S.carryMP=0;"
+                "S.spinBonus=0;S.lifetimeEarned=20;S.lifetimePaise=2000;S.streak=0;S.day=1;"
                 "S.alarmDoneToday=false;S.setsDone=0;S.tranche=0;S.mathInSet=0;S.setAdsSeen=0;"
                 "S.fillFailure=false;S.screen='math';draw()")
     pg.wait_for_timeout(200)
@@ -535,8 +577,8 @@ with sync_playwright() as p:
           "mathSet" in slots, ", ".join(slots))
     w0 = pg.evaluate("S.withdrawable")
     pg.click("#mathad"); pg.wait_for_timeout(200)
-    check("watching it credits the user's share of what it earned",
-          abs((pg.evaluate("S.withdrawable") - w0) - 0.1056 * 0.5) < 1e-9,
+    check("watching it credits the user's share, in whole paise",
+          abs((pg.evaluate("S.withdrawable") - w0) - 0.05) < 1e-9,
           f"₹{pg.evaluate('S.withdrawable') - w0:.4f}")
     solve(); solve()
     check("finishing 4 questions completes the set", pg.evaluate("S.setsDone") == 1)
@@ -578,8 +620,18 @@ with sync_playwright() as p:
 
     section("SPIN: a share multiplier, never a fixed prize (PRD 4.3)")
     pg.evaluate("S.screen='dashboard';draw()"); pg.wait_for_timeout(150)
-    check("no hardcoded rupee prize table remains in the spin copy",
-          "₹25" not in pg.inner_text("#app"))
+    check("the spin awards a share multiplier, not a rupee prize",
+          pg.evaluate("SPIN_TABLE.every(r => r[0] <= 1)")
+          and "₹25" not in pg.inner_text("#app"),
+          str(pg.evaluate("SPIN_TABLE.map(r=>r[0])")))
+    check("even the jackpot only multiplies money that already arrived",
+          pg.evaluate("""(() => {
+              S.spinBonus = 1.0; S.streak = 30; S.lifetimeEarned = 20;
+              S.ledger=[]; S.withdrawablePaise=0; S.carryMP=0; S.fillFailure=true;
+              for (let i=0;i<20;i++) creditAdView('math');
+              const p = S.withdrawablePaise; S.fillFailure=false; S.spinBonus=0; return p;
+          })()""") == 0,
+          "no fill + jackpot multiplier still pays ₹0")
 
     # ------------------------------------------- WIDGET AND REGIONAL CALENDAR
     section("WIDGET: 4x2 proportions, two tap targets, midnight rollover (PRD 16.4)")
