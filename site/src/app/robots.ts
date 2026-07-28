@@ -10,7 +10,7 @@ export default function robots(): MetadataRoute.Robots {
       // Order state and personal data live under these. Nothing here should ever
       // be crawled, and /api is disallowed so bots do not hammer rate-limited
       // endpoints on our behalf.
-      disallow: ["/api/", "/checkout", "/checkout/", "/cart", "/wishlist", "/search"],
+      disallow: ["/api/", "/admin", "/admin/", "/checkout", "/checkout/", "/cart", "/wishlist", "/search"],
     },
     sitemap: `${BASE}/sitemap.xml`,
   };

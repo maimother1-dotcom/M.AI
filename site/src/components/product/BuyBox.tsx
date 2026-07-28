@@ -6,7 +6,7 @@ import { useCart } from "@/components/cart/CartProvider";
 import { ProductImage } from "@/components/product/ProductImage";
 import { Button, Price, ProductBadge, Stars } from "@/components/ui";
 import { displayPrice, savingPercent } from "@/lib/currency";
-import { FREE_SHIPPING_THRESHOLD } from "@/lib/pricing";
+import { FREE_SHIPPING_THRESHOLD } from "@/lib/limits";
 import type { Product } from "@/lib/types";
 
 export function BuyBox({ product }: { product: Product }) {

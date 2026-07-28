@@ -42,7 +42,7 @@ import { NextResponse, type NextRequest } from "next/server";
  * blocked. `/cart` is deliberately absent for exactly that reason — it holds no
  * card data and is prerendered.
  */
-const STRICT_PREFIXES = ["/checkout", "/api"];
+const STRICT_PREFIXES = ["/checkout", "/api", "/admin"];
 
 function isStrictPath(pathname: string): boolean {
   return STRICT_PREFIXES.some(

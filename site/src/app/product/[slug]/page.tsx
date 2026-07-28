@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getProduct, getRelatedProducts, products } from "@/data/products";
+import { products } from "@/data/products";
+import { getCatalogBySlug, getCatalogRelated } from "@/lib/admin/store";
 import { getReviewsForProduct } from "@/data/reviews";
 import { BuyBox } from "@/components/product/BuyBox";
 import { ProductCard } from "@/components/product/ProductCard";
@@ -18,7 +19,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const product = getProduct(slug);
+  const product = getCatalogBySlug(slug);
   if (!product) return { title: "Not found" };
 
   return {
@@ -34,10 +35,10 @@ export async function generateMetadata({
 
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const product = getProduct(slug);
+  const product = getCatalogBySlug(slug);
   if (!product) notFound();
 
-  const related = getRelatedProducts(product, 4);
+  const related = getCatalogRelated(product, 4);
   const productReviews = getReviewsForProduct(product.slug);
 
   /**

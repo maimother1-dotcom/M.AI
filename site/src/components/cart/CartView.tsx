@@ -6,7 +6,7 @@ import { ProductImage } from "@/components/product/ProductImage";
 import { Motif, MotifDivider } from "@/components/brand/Motif";
 import { ButtonLink } from "@/components/ui";
 import { displayPrice } from "@/lib/currency";
-import { FREE_SHIPPING_THRESHOLD, amountToFreeShipping } from "@/lib/pricing";
+import { FREE_SHIPPING_THRESHOLD, amountToFreeShipping } from "@/lib/limits";
 
 export function CartView() {
   const { entries, subtotalMinor, compareAtSubtotalMinor, setQuantity, remove, hydrated } =

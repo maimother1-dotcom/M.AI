@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { categories, getCategory } from "@/data/categories";
-import { getProductsByCategory } from "@/data/products";
+import { getCatalogByCategory } from "@/lib/admin/store";
 import { ShopGrid } from "@/components/shop/ShopGrid";
 import { MotifDivider } from "@/components/brand/Motif";
 import { Container } from "@/components/ui";
@@ -40,7 +40,7 @@ export default async function CategoryPage({
   const category = getCategory(slug);
   if (!category) notFound();
 
-  const items = getProductsByCategory(category.slug);
+  const items = getCatalogByCategory(category.slug);
   // Ignore a `?sub=` that is not a real subcategory rather than showing an empty grid.
   const validSub = category.subcategories.some((s) => s.slug === sub) ? sub : undefined;
 

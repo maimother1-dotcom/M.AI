@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { getProductBySku } from "@/data/products";
-import { MAX_QUANTITY_PER_LINE } from "@/lib/pricing";
+import { MAX_QUANTITY_PER_LINE } from "@/lib/limits";
 import type { CartLine, Product } from "@/lib/types";
 
 /**

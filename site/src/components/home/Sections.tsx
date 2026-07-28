@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { categories } from "@/data/categories";
-import { getBadgedProducts, products } from "@/data/products";
+import { products } from "@/data/products";
+import { getCatalog, getCatalogBadged } from "@/lib/admin/store";
 import { reviews } from "@/data/reviews";
 import { editorial } from "@/data/editorial";
 import { EditorialPlate, ProductImage } from "@/components/product/ProductImage";
@@ -113,7 +114,7 @@ export function CategoryTiles() {
    ========================================================================= */
 
 export function Bestsellers() {
-  const picks = getBadgedProducts("bestseller", 10);
+  const picks = getCatalogBadged("bestseller", 10);
 
   return (
     <section className="border-y border-line bg-ivory-deep py-24 lg:py-32">
@@ -190,7 +191,7 @@ export function EditorialSplit() {
    ========================================================================= */
 
 export function NewArrivals() {
-  const fresh = getBadgedProducts("new", 8);
+  const fresh = getCatalogBadged("new", 8);
 
   return (
     <section className="py-24 lg:py-32">
@@ -220,7 +221,7 @@ export function NewArrivals() {
    ========================================================================= */
 
 export function BeautySpotlight() {
-  const beauty = products.filter((p) => p.category === "beauty").slice(0, 4);
+  const beauty = getCatalog().filter((p) => p.category === "beauty").slice(0, 4);
 
   return (
     <section className="bg-indigo py-24 text-ivory lg:py-32">
@@ -325,7 +326,7 @@ export function Testimonials() {
    ========================================================================= */
 
 export function Lookbook() {
-  const picks = getBadgedProducts("editors-pick", 6);
+  const picks = getCatalogBadged("editors-pick", 6);
 
   return (
     <section className="border-t border-line pt-24 lg:pt-32">

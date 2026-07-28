@@ -2,13 +2,14 @@
   "name": "lindienne",
   "version": "1.0.0",
   "private": true,
-  "description": "L'INDIENNE — luxury women's marketplace",
+  "description": "L'INDIENNE \u2014 luxury women's marketplace",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint src",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "admin:setup": "node scripts/admin-setup.mjs"
   },
   "dependencies": {
     "@stripe/react-stripe-js": "^3.9.2",

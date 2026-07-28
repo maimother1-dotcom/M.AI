@@ -41,6 +41,10 @@ npm run build && npm run start -- -p 3100
 node scripts/security-check.mjs    # 26 adversarial checks
 node scripts/checkout-walk.mjs     # full purchase in a real browser
 MOBILE=1 node scripts/checkout-walk.mjs
+
+node scripts/admin-check.mjs       # admin surface, unauthenticated
+ADMIN_EMAIL=... ADMIN_PASSWORD=... ADMIN_TOTP_SECRET=... \
+  node scripts/admin-flow.mjs      # authenticated admin flow
 ```
 
 `security-check.mjs` tries to break the pricing authority: injecting prices, negative and
@@ -105,6 +109,61 @@ from the product id. No network request, nothing to break, identical on server a
 To use a real photograph, set `image` on the product in `src/data/products.ts`. That is the
 whole change; `<ProductImage>` renders `next/image` instead. For a remote host, whitelist it
 in `next.config.ts` under `images.remotePatterns`.
+
+---
+
+## Admin panel
+
+Optional, and off by default: with no credentials configured, `/admin` and every
+`/api/admin/*` route return **404**, not 401 — an unconfigured admin should not
+advertise that there is anything to attack.
+
+```bash
+npm run admin:setup -- you@example.com   # prints four env vars, commits nothing
+```
+
+Sign-in needs **email + password + a TOTP code**. Two-factor is not optional:
+this surface can change what every product costs, so a stolen password alone
+must not reach it. Passwords are stored as a scrypt hash, codes are verified
+against RFC 6238 with a ±1 step window, sessions are HMAC-signed in an
+HttpOnly / SameSite=Strict cookie, and sign-in is rate limited to five attempts
+per fifteen minutes.
+
+### How edits persist
+
+The committed catalogue in `src/data/products.ts` stays the source of truth. The
+admin records a small patch per product in an **overrides store**, and reads
+merge the patch over the base. So a bad edit is a one-line delete, not a
+migration, and "Revert to committed" always works.
+
+Every write calls `revalidatePath`, so a price change reaches the prerendered
+product and shop pages as well as the checkout total. That pairing is the point:
+showing one price and charging another is the worst thing this feature could do,
+and `scripts/admin-flow.mjs` asserts both move together.
+
+**Where it persists depends on the host, and the UI says which:**
+
+| Host | Behaviour |
+|---|---|
+| Local, VPS, any single long-lived server | Durable. Writes `data/catalog-overrides.json`. |
+| Vercel and other serverless | **Not durable.** Filesystem is ephemeral and per-instance. The admin shows a red banner saying so. |
+
+On serverless, the workflow is: edit → **Export edits** → commit the JSON. To
+make it live-durable instead, implement the three functions marked
+`ADAPTER SEAM` in `src/lib/admin/store.ts` against Postgres or Vercel KV.
+Nothing else changes.
+
+### Known limitation
+
+Server-rendered pages (home, shop, category, product) reflect edits immediately.
+Four client-rendered surfaces — search, wishlist, the cart drawer and the cart
+page — read the catalogue bundled at build time, so they show committed prices
+until the next deploy. **Money is never affected**: checkout always re-prices
+from the override-aware catalogue on the server. Exporting and committing your
+edits resolves the display drift.
+
+Orders are deliberately not in the admin. There is no order storage yet (see
+"No database" above), so an order list would be a lie. Add a database first.
 
 ---
 

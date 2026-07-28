@@ -1,5 +1,11 @@
-import { getProductBySku } from "@/data/products";
+import { getCatalogProduct } from "@/lib/admin/store";
 import { BASE_CURRENCY, CURRENCIES } from "@/lib/currency";
+import {
+  MAX_LINES_PER_CART,
+  MAX_QUANTITY_PER_LINE,
+  FREE_SHIPPING_THRESHOLD,
+  amountToFreeShipping,
+} from "@/lib/limits";
 import type {
   CartLine,
   CategorySlug,
@@ -21,9 +27,10 @@ import type {
  * It is never the thing standing between an attacker and free merchandise.
  */
 
-/** Nobody legitimately buys 400 of one lipstick. Caps abuse and stock errors alike. */
-export const MAX_QUANTITY_PER_LINE = 10;
-export const MAX_LINES_PER_CART = 40;
+// Re-exported so server-side callers have one import site. Defined in
+// lib/limits.ts because Client Components need them too and must not import
+// this module (it reaches the server-only override store).
+export { MAX_QUANTITY_PER_LINE, MAX_LINES_PER_CART, FREE_SHIPPING_THRESHOLD, amountToFreeShipping };
 
 /**
  * GST by category, in basis points. India charges different rates by HSN class,
@@ -144,7 +151,7 @@ export function priceCart({
 
   for (const line of lines) {
     // 1. The SKU must exist in OUR catalog. A fabricated SKU cannot be priced.
-    const product = getProductBySku(line.sku);
+    const product = getCatalogProduct(line.sku);
     if (!product) {
       throw new CartError(`We no longer carry one of these items.`, "UNKNOWN_SKU", line.sku);
     }
@@ -219,7 +226,7 @@ export function priceCart({
   // 7. Tax, per line, on the discounted value — apportioned so the sum of the
   //    parts equals the whole rather than drifting by a paisa.
   for (const line of pricedLines) {
-    const product = getProductBySku(line.sku);
+    const product = getCatalogProduct(line.sku);
     if (!product) continue;
     const share = subtotalMinor === 0 ? 0 : line.lineTotalMinor / subtotalMinor;
     const taxableValue = discountedSubtotal * share;
@@ -258,10 +265,3 @@ export function priceCart({
   };
 }
 
-/** How much more to spend to earn free standard shipping. Zero once earned. */
-export function amountToFreeShipping(subtotalMinor: number): number {
-  const threshold = CURRENCIES[BASE_CURRENCY].freeShippingAbove;
-  return Math.max(0, threshold - subtotalMinor);
-}
-
-export const FREE_SHIPPING_THRESHOLD = CURRENCIES[BASE_CURRENCY].freeShippingAbove;
