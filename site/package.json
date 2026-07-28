@@ -1,0 +1,41 @@
+{
+  "name": "lindienne",
+  "version": "1.0.0",
+  "private": true,
+  "description": "L'INDIENNE — luxury women's marketplace",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@stripe/react-stripe-js": "^3.9.2",
+    "@stripe/stripe-js": "^7.9.0",
+    "next": "^16.2.12",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "server-only": "^0.0.1",
+    "stripe": "^18.5.0",
+    "zod": "^3.25.76"
+  },
+  "overrides": {
+    "postcss": "^8.5.23",
+    "sharp": "^0.35.3",
+    "brace-expansion": "^5.0.8",
+    "minimatch": "^10.2.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.0",
+    "@tailwindcss/postcss": "^4.1.13",
+    "@types/node": "^22.18.1",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "eslint": "^9.35.0",
+    "eslint-config-next": "^16.2.12",
+    "postcss": "^8.5.23",
+    "tailwindcss": "^4.1.13",
+    "typescript": "^5.9.2"
+  }
+}

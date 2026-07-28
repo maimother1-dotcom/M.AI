@@ -20,3 +20,13 @@ chroma/
 session-locks/
 dashboard/
 .DS_Store
+
+# --- Web app (site/) ---
+node_modules/
+.next/
+out/
+build/
+next-env.d.ts
+.env*.local
+.vercel
+*.tsbuildinfo
