@@ -29,6 +29,23 @@ import type { PricedCart } from "@/lib/types";
  */
 let cachedSecret: string | null = null;
 
+/**
+ * Whether order signing is usable.
+ *
+ * Routes call this BEFORE doing any work, so a deployment that is missing its
+ * secret returns a clear 503 explaining exactly what to set — rather than
+ * throwing mid-request and showing the customer a generic 500 with no clue what
+ * went wrong. The guard itself does not soften: without a secret, no order is
+ * ever signed.
+ */
+export function isOrderSigningConfigured(): boolean {
+  if (cachedSecret) return true;
+  const fromEnv = process.env.ORDER_SIGNING_SECRET;
+  if (fromEnv && fromEnv.length >= 32) return true;
+  // Outside production a per-process secret is generated on demand.
+  return process.env.NODE_ENV !== "production";
+}
+
 function getSecret(): string {
   if (cachedSecret) return cachedSecret;
 

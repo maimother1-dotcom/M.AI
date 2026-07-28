@@ -4,7 +4,12 @@ import { CartError, priceCart } from "@/lib/pricing";
 import { checkoutSchema, validationError } from "@/lib/validation";
 import { LIMITS, clientKey, rateLimit } from "@/lib/rate-limit";
 import { isLivePaymentAvailable, stripe } from "@/lib/stripe";
-import { generateOrderNumber, signOrder, type OrderRecord } from "@/lib/orders";
+import {
+  generateOrderNumber,
+  isOrderSigningConfigured,
+  signOrder,
+  type OrderRecord,
+} from "@/lib/orders";
 
 /**
  * Create a payment session.
@@ -30,6 +35,24 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "RATE_LIMITED", message: "Too many attempts. Wait a moment and try again." },
       { status: 429, headers: { "Retry-After": String(limit.retryAfter) } },
+    );
+  }
+
+  // 1b. Refuse early and legibly if this deployment cannot sign orders. Without
+  //     a signing secret an order token could not be trusted later, so taking
+  //     the payment first would be worse than declining now.
+  if (!isOrderSigningConfigured()) {
+    console.error(
+      "[checkout] ORDER_SIGNING_SECRET is not set. Generate one with `openssl rand -base64 48` " +
+        "and add it to the deployment's environment variables.",
+    );
+    return NextResponse.json(
+      {
+        error: "NOT_CONFIGURED",
+        message:
+          "Checkout is not fully configured on this deployment yet. No charge was made. Please try again shortly.",
+      },
+      { status: 503 },
     );
   }
 
