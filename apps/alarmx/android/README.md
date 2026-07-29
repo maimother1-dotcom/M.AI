@@ -6,7 +6,7 @@ Read this before assuming anything in this directory works.
 
 | Module | State | Verified how |
 |---|---|---|
-| **`core/`** | **Builds and tests.** Pure Kotlin, zero Android dependencies. | `gradle :core:test` — **28 tests passing** |
+| **`core/`** | **Builds and tests.** Pure Kotlin, zero Android dependencies. | `gradle :core:test` — **78 tests passing** |
 | `alarmkit/` | Source **and 13 Robolectric tests written**. Cannot run here. | Nothing. See below. |
 | `app/` | **Source only. Does not compile in this repo's environment.** | Nothing. See below. |
 
@@ -77,7 +77,24 @@ Deliberate. `core/` has no Android imports, so it compiles and unit-tests on any
 | `DayBoundary.kt` | Server-side day rules. Blocks the timezone-farming attack. PRD 18.4. |
 | `RewardEngine.kt` | Verification gate, replay protection, alarm gate, daily ceiling. |
 
-The 28 tests include a randomised property test asserting the engine **never pays more than the entitlement**, across 200 trials of mixed tiers, spin multipliers, fill failures and replays.
+The 28 money tests include a randomised property test asserting the engine **never pays more than the entitlement**, across 200 trials of mixed tiers, spin multipliers, fill failures and replays.
+
+## Why the UX logic is in `core/` too
+
+The same reason, applied to the other half of the product. `app/` cannot be compiled here, so anything left in it is unverified by definition. Everything that can be decided without the Android framework was therefore moved out of it, and 50 more tests came with them:
+
+| Package | What it decides | Why it matters |
+|---|---|---|
+| `oem/` | Per-manufacturer battery-killer walkthrough, keyed off `Build.MANUFACTURER` | **PRD 9, the biggest technical risk in the product.** Redmi, Realme and Vivo kill backgrounded apps outright, and no permission exists to ask for. Get this wrong and the alarm does not ring on most of the target market. |
+| `permissions/` | Which permissions block the alarm and which merely degrade it | Exactly two block: exact-alarm and battery exemption. OEM autostart cannot be verified by any API, so it is self-reported and never blocking — treating it otherwise would strand users who have already granted it. |
+| `onboarding/` | The step machine | Every step is derived from state, so denying a permission leaves the user *on that step* instead of pushed past it onto a home screen with an alarm that will never ring. |
+| `close/` | The Daily Close receipt | Summed from the ledger, never typed. A randomised test asserts receipt equals ledger across 200 trials. |
+| `math/` | 5 sets × 4, ad after every 2, three tranches | The tranches are the retention mechanism: three sittings instead of one, so the app is opened three times. |
+
+Two behaviours worth calling out, because both are the opposite of the obvious implementation:
+
+- **A credited view that rounds to zero paise still consumes one of the twenty.** Deriving "credited" from `credited > 0` would hand out a free extra view every time the carry was low.
+- **Identity is deferrable.** The alarm needs no account, and asking for a phone number before the user has seen the app work is the largest drop-off in this category. The payout gate still exists; it just sits where the user wants something from us.
 
 **These rules are duplicated in `../backend/src/`, and that duplication is checked.** `backend/test/backend.test.ts` reads these Kotlin files and fails if a share tier, the daily ceiling, the micropaise resolution or the minimum day gap ever diverges. Verified by deliberately changing `STREAK_30` to 6500 and watching the TypeScript test go red.
 
@@ -101,14 +118,17 @@ The reliability- and security-critical paths, and only those:
 
 Named in the source but not written. This list is the honest gap, not a roadmap gesture:
 
-- `ui/MainActivity`, `ui/CalendarActivity`, `ui/TaskViewFactory` (shake / math / QR dismissal UIs)
+- `ui/MainActivity`, `ui/OnboardingActivity`, `ui/MathActivity`, `ui/CloseActivity`, `ui/WalletActivity`, `ui/TaskViewFactory` (shake / math / QR dismissal UIs)
 - `data/AlarmXDatabase`, `data/AlarmDao`, `data/PanchangDao`, the Room entities and migrations
-- `AlarmXApi`, `IntegrityTokenProvider`, `DebugMenu`
+- `AlarmXApi` (the client for `../../backend`), `IntegrityTokenProvider`
 - All resources: `strings.xml` in five locales, themes, drawables, launcher icons
 - The AdMob rewarded-video integration and its SSV user-id plumbing
-- Firebase Auth phone OTP flow, the OEM battery-settings onboarding walkthrough
-- The panchang precompute job (Swiss Ephemeris, Moshier mode, commercial licence)
+- Firebase Auth phone OTP flow
 - Any instrumented or UI test
+
+**These are now renderers, not decision-makers.** The state each screen shows comes from `core/`, which is tested. That is the whole reason for the split: it shrinks the uncompiled surface to layout and framework glue.
+
+The panchang precompute job (Swiss Ephemeris, commercial licence) is **out of v1** — PRD 19.3. The widget ships showing next alarm, streak and today's earnings instead.
 
 ## Before any of this ships
 

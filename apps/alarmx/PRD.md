@@ -1,7 +1,9 @@
 # AlarmX — Product Requirements Document
 
-**Version:** 0.6 · **Date:** 26th July 2026 · **Owner:** Bijoy Halder
-**Status:** Spec agreed, pre-development
+**Version:** 0.8 · **Date:** 29th July 2026 · **Owner:** Bijoy Halder
+**Status:** Backend service built and attacked. Android layer not yet compiled.
+
+**v0.8 changes.** The backend is a running service rather than four pure modules, so §18.10 is rewritten from a list of things that could not be tested into a table of attacks that were. Sessions are opaque server-side tokens, not JWT. New §19 states the launch sequence and the 14-day closed-testing wall that sets the date. §19.3 removes the panchang calendar from v1 while keeping the widget.
 
 **v0.6 changes — the largest so far. §2 is rewritten.** The fixed monthly cap is replaced by a **revenue share**: the user is paid a percentage of ad revenue that has already arrived and been verified server-side, so a loss on the reward line is structurally impossible rather than merely unlikely. The share rises with the streak (50/55/60%) instead of a fixed ₹30 pot (§4.2), the spin awards a share multiplier instead of rupee prizes (§4.3), and the monthly cap becomes a 20-view daily ceiling. New §4.7 daily math section and §4.8 Daily Close. New §8.3 makes AdMob SSV the only credit trigger. `build_model.py` now refuses to build if any scenario would lose money.
 
@@ -780,8 +782,70 @@ Requirements:
 
 TLS everywhere, database connections included. On every HTTP response: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Strict-Transport-Security` at one year, and a Content-Security-Policy restricting scripts to our own origin. CORS restricted to the app's own origins, never `*`.
 
-### 18.10 What is still untested
+### 18.10 What is tested, and what is still not
 
-No backend exists, so IDOR, privilege escalation, JWT handling, SQL injection, file-upload handling and CORS are **specified and unverified**. Play Integrity, SSV wiring and keystore handling are likewise untested. **Book a human security review before launch** — this app moves real money to real bank accounts and holds DPDP-regulated data, and no automated audit substitutes for that.
+Rewritten in v0.8. The backend is now a running service, so most of what this section used to defer is executed rather than asserted.
+
+**Now tested, as HTTP requests against a live server** (`backend/test/security.test.ts`, 37 checks):
+
+| Attack | Result |
+|---|---|
+| IDOR — a user id supplied in a body, query or path | Ignored. Identity comes only from the session lookup. |
+| A user id used as a credential | Rejected. |
+| Forged, expired, or revoked session token | 401. Logout and account deletion revoke instantly. |
+| Replayed SSV callback | Credited exactly once; the replay is still audited. |
+| One tampered character in a callback | `bad_signature`, nothing credited, nothing logged to the ledger. |
+| Callback naming an unknown user | Acknowledged, no account created, no credit. |
+| Ad views with no alarm completed | Nothing credited, whatever the volume. |
+| Double-tapped and concurrent withdrawals | One payment. Five simultaneous requests, one row. |
+| A client-supplied `amount` | Ignored; the server recomputes it. |
+| Injection payloads in a phone number | 400 at the edge. In an opaque field, stored as a literal. |
+| Oversized body, wrong content type, malformed JSON | 413 / 415 / 400, never a 500. |
+| Rate limits | 429 at the documented thresholds, and rejected attempts count. |
+| Error bodies | Code plus correlation id. No stack trace, path or hostname. |
+| CORS | Allowlisted, never `*`. |
+
+The IDOR and SSV-replay tests were each confirmed to **fail against a deliberately reintroduced bug** before being accepted. A security test nobody has watched fail proves nothing.
+
+**Session handling is no longer a JWT question.** Sessions are opaque 32-byte random tokens stored hashed. That removes `alg: none`, algorithm confusion and non-revocable tokens as a category rather than testing for them.
+
+**Still untested, honestly:**
+
+- **The Postgres store has never been run.** There is no database in this environment. `MemoryStore` is what the suite executes, and it reproduces the mutual exclusion and atomicity the Postgres path is meant to provide — but `SELECT ... FOR UPDATE`, `ON CONFLICT DO NOTHING` and the transaction boundaries themselves are reviewed source, not verified behaviour. **Re-run the full suite against a real Postgres before launch.**
+- **Nothing is deployed.** TLS termination, HSTS preload, the reverse proxy's own header handling, and `X-Forwarded-For` trust in the real topology are all configuration this repo cannot test.
+- **Play Integrity, AdMob SSV wiring and keystore handling** remain untested: all three need the Android build and live Google accounts.
+- **The payment rail does not exist.** PSP webhook signature verification, settlement reconciliation and chargeback paths are specified only.
+- **The AdMob callback does not carry revenue.** It confirms a view happened. The realised value comes from AdMob reporting, and `RevenueSource` is the seam for it. Until that is wired to actual reporting, the gross-per-view figure is a server-side constant and must be set to a floor, never an estimate.
+
+**Book a human security review before launch.** This app moves real money to real bank accounts and holds DPDP-regulated data. No automated audit substitutes for that, and this section getting shorter does not change it.
+
+---
+
+## 19. Launch sequence
+
+The order is forced by one external constraint, so it is stated first.
+
+### 19.1 The 14-day wall
+
+A Play developer account registered as an individual must run a **closed test with at least 12 testers, opted in continuously for 14 days**, before it may apply for production access. The clock cannot start until an APK exists and is uploaded.
+
+This cannot be shortened, bought or worked around. Everything else in this section is arranged to reach an uploadable build as early as possible, because the wall is the long pole and starting it late moves launch day one-for-one.
+
+Verify the current numbers in Play Console at signup: Google has adjusted them before.
+
+### 19.2 Order of work
+
+| Stage | Work | Blocks |
+|---|---|---|
+| **Now** | Play Console account (identity verification takes days on its own). Recruit 12 testers. AdMob account, rewarded unit, SSV enabled. 2FA on Play, AdMob, Firebase, PSP. Play App Signing. | Everything |
+| **Next** | Compile `:app` on a machine with the SDK. `gradle :alarmkit:test` green (13 Robolectric tests already written). Physical Redmi and Realme alarm test. Upload to closed testing. | The 14-day clock |
+| **During the 14 days** | Deploy the backend behind TLS with real Postgres, and re-run the security suite against it. Wire live SSV. Human security review. DPDP and Play reward-policy legal review. Account deletion flow plus its public URL. Choose the PSP. | Production access |
+| **After** | Apply for production. Staged rollout 5% → 20% → 100%. | — |
+
+### 19.3 What is deliberately not in v1
+
+The **panchang calendar**. Keeping it would require the Swiss Ephemeris Professional licence, the 60-date cross-check against printed almanacs in Kolkata and Chennai, and native-speaker review of the Tamil 60-year cycle names — roughly four weeks, on a feature that earns nothing directly.
+
+**The 4×2 widget still ships**, showing the next alarm, the streak and today's earnings. It was asked for so the user is reminded to open the app, and it does that job better with those three fields than with a tithi. The panchang engine, its 38 tests and the 19 Bengali cross-validation tests stay in the repo untouched, and drop into the widget in v1.1 with no app rewrite.
 
 ---

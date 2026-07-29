@@ -366,6 +366,124 @@ check("the app module is honestly excluded from the build",
       "no Android SDK here, so :core stays green for a real reason")
 
 
+# ================================================ 4c. THE HTTP LAYER (server)
+section("4c. THE HTTP LAYER — invariants a request test cannot see")
+
+http = be / "http"
+handlers_ts = (http / "handlers.ts").read_text()
+router_ts = (http / "router.ts").read_text()
+guard_ts = (http / "guard.ts").read_text()
+session_ts = (http / "session.ts").read_text()
+config_ts = (be / "config.ts").read_text()
+providers_ts = (be / "providers.ts").read_text()
+postgres_ts = (be / "store" / "postgres.ts").read_text()
+memory_ts = (be / "store" / "memory.ts").read_text()
+
+# The request suite proves the endpoints that EXIST are safe. These checks are
+# about the ones that do not exist yet: they fail the build the moment somebody
+# adds a handler that reaches for an identity in the wrong place.
+handlers_code = strip_comments(handlers_ts)
+
+check("identity is resolved in exactly one place",
+      router_ts.count("resolveSession(") == 1
+      and "resolveSession(" not in handlers_code,
+      "two places to authenticate is one place to forget to")
+
+IDENTITY_FROM_INPUT = re.compile(
+    r"(ctx\.body|ctx\.rawQuery|params|query)[^\n;]{0,40}\[?['\"]?(userId|user_id|uid|accountId)",
+)
+check("no handler reads a user id from a body, query or path",
+      IDENTITY_FROM_INPUT.search(handlers_code) is None,
+      "this exact line is what IDOR looks like in a diff")
+
+check("no handler accepts a money amount from the client",
+      re.search(r"(requireString|optionalString)\(ctx\.body,\s*['\"](amount|paise|rupees)",
+                handlers_code) is None,
+      "the server recomputes every figure; a client-supplied amount is a gift")
+
+check("sessions are opaque random tokens, stored hashed",
+      "randomBytes(TOKEN_BYTES)" in session_ts and "createHash('sha256')" in session_ts,
+      "a dumped session table must not yield usable tokens")
+check("no JWT verification exists to get wrong",
+      not re.search(r"\b(jsonwebtoken|jwt\.verify|alg['\"]?\s*:)", strip_comments(session_ts)),
+      "opaque sessions remove alg:none and algorithm confusion entirely")
+
+check("phone numbers are HMAC'd with a required pepper",
+      "createHmac('sha256', pepper)" in handlers_ts
+      and "ALARMX_PHONE_PEPPER must be set" in config_ts,
+      "a plain hash of ten digits is reversible in seconds")
+check("no config secret has a usable default",
+      not re.search(r"ALARMX_PHONE_PEPPER\s*(\?\?|\|\|)\s*['\"]", config_ts),
+      "a default pepper silently becomes the production pepper")
+
+check("the integrity verifier fails CLOSED when unconfigured",
+      "class DenyingIntegrityVerifier" in providers_ts
+      and re.search(r"DenyingIntegrityVerifier[\s\S]{0,200}passed:\s*false", providers_ts)
+      is not None,
+      "an unconfigured check that returns true is worse than no check")
+
+check("idempotency is claimed by insert-or-collide, never check-then-insert",
+      "ON CONFLICT (user_id, kind, key) DO NOTHING" in postgres_ts
+      and "SELECT" not in postgres_ts.split("claim: async")[1].split("},")[0],
+      "SELECT then INSERT is the same race in a different costume")
+check("the user row is locked for the length of the transaction",
+      "FOR UPDATE" in postgres_ts,
+      "PRD 18.8 — two concurrent withdrawals must serialise")
+schema_sql = (be / "store" / "schema.sql").read_text()
+# SQL comments, stripped for the same reason as the KDoc above: this schema
+# explains in prose why DOUBLE PRECISION is banned, and the check must read the
+# DDL rather than the argument for it.
+schema_ddl = re.sub(r"--[^\n]*", "", schema_sql)
+
+check("the claims table enforces uniqueness in the schema, not only in code",
+      "PRIMARY KEY (user_id, kind, key)" in schema_ddl)
+check("money columns are NUMERIC, never a float type",
+      "NUMERIC(20,0)" in schema_ddl
+      and not re.search(r"\b(REAL|DOUBLE PRECISION|FLOAT)\b", schema_ddl),
+      "a float column reintroduces PRD 18.3 underneath correct application code")
+
+# Interpolating a module-level constant column list is safe; interpolating
+# anything else into SQL is the injection. So the rule is precise rather than
+# blunt: exactly one allowed substitution, by name.
+interpolations = set(re.findall(r"\$\{(\w+)\}", strip_comments(postgres_ts)))
+check("the only value interpolated into SQL is the constant column list",
+      interpolations <= {"USER_COLUMNS"},
+      f"unexpected interpolation into SQL: {sorted(interpolations - {'USER_COLUMNS'})}")
+check("no SQL is built by string concatenation",
+      not re.search(r"query\(\s*[^,)]*?['\"]\s*\+", strip_comments(postgres_ts)),
+      "every value goes through $1..$n")
+
+for header in ("X-Content-Type-Options", "X-Frame-Options",
+               "Strict-Transport-Security", "Content-Security-Policy"):
+    check(f"{header} is sent on every response", f"'{header}'" in guard_ts)
+check("CORS is allowlisted and never a wildcard",
+      "allowedOrigins.includes(origin)" in guard_ts
+      and "'*'" not in strip_comments(guard_ts),
+      "PRD 18.9")
+
+check("error responses carry a correlation id and no detail",
+      "correlationId" in guard_ts
+      and not re.search(r"send\w*\(res,[^)]*\b(stack|err\.message)\b", guard_ts),
+      "PRD 18.5 — detail goes to the log, never to the client")
+check("stack traces are logged server-side, not returned",
+      "stack: err instanceof Error" in router_ts and "deps.log(" in router_ts)
+
+ROUTE_TABLE = router_ts.split("const ROUTES")[1].split("];")[0]
+check("no debug, test or seed endpoint is routed",
+      not re.search(r"/(debug|test|seed|admin|internal)\b", ROUTE_TABLE),
+      "PRD 18.5 — a release build contains no debug surface")
+check("every authed route is marked auth: true in one table",
+      ROUTE_TABLE.count("auth:") == ROUTE_TABLE.count("path:"),
+      "a route with no explicit auth decision is a route that shipped open")
+check("the SSV callback has its own rate limit, not the user-traffic one",
+      "RATE_LIMITS.ssvPerIp" in handlers_ts,
+      "Google's callbacks share a few IPs; a tight limit throttles all revenue")
+
+check("the in-memory store commits atomically, so a throw rolls back",
+      "pending.claims" in memory_ts and "// Commit." in memory_ts,
+      "a failed transaction must not burn an idempotency key")
+
+
 # ===================================== 5. ATTACKER PATHS (spec requirements)
 section("5. ATTACKER'S PERSPECTIVE (ECC) — closed in the spec")
 

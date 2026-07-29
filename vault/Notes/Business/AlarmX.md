@@ -132,11 +132,39 @@ One serious attempt was made at an alternative. Robolectric runs real Android fr
 
 Two bugs were caught by tests during the build, both worth remembering. Millipaise was too coarse a unit — one ad view is 10.56 paise, which is not a whole number of tenths — so money moved to micropaise where it is exactly 10,560. And the security scanner started failing against its own rule definitions, which was a genuine self-reference flaw rather than a false alarm.
 
+## The server exists now, and it has been attacked
+
+The backend used to be four pure modules with nothing calling them, which meant the security requirements in the PRD were literally untestable: IDOR, session handling and injection have no meaning without a request path. There is now an HTTP service, and 37 tests that fire hostile requests at it rather than calling functions.
+
+Three decisions in it are worth keeping.
+
+**Sessions are opaque random tokens, not JWT.** Thirty-two random bytes, stored hashed, meaning nothing on their own. That removes `alg: none`, algorithm confusion and non-revocable tokens as a category rather than testing carefully for them, and logout and account deletion now revoke instantly instead of waiting for expiry. Deleting a risk class beats defending it.
+
+**Identity comes from exactly one place.** Authenticated handlers receive the user id as a parameter that only the router can supply, so no handler can reach into a body or query string for one. A static check fails the build if any of them tries.
+
+**Claims are inserted, never checked-then-inserted.** Reading a row to see whether an idempotency key exists and then writing it is the same race in different clothes. The claim is an insert that either wins or collides.
+
+Two real bugs surfaced. The AdMob callback was rate limited with the per-user rule, and since every Google callback arrives from a handful of IPs, that would have throttled all revenue at once in production — a limit that looked prudent and was actually a self-inflicted outage. And an oversized request body destroyed the socket, so the client saw a connection reset rather than the explanation.
+
+Both the IDOR test and the SSV replay test were confirmed to **fail against a deliberately reintroduced bug** before being accepted. A security test nobody has watched fail proves nothing at all.
+
+## The UX logic moved to where it can be tested
+
+Same reasoning, other half of the product. The Android layer cannot be compiled here, so anything left in it is unverified by definition. Everything decidable without the framework moved into pure Kotlin: the onboarding step machine, the permission checklist, the per-manufacturer battery walkthrough, the Daily Close receipt, the maths session. Fifty more tests came with them.
+
+The OEM guide is the one that matters commercially. Redmi, Realme and Vivo kill backgrounded apps outright and there is no permission to request, so an alarm app that does not walk the user through those settings ships broken on most of its own market. It was previously nowhere in the codebase.
+
+Two behaviours are deliberately the opposite of the obvious implementation. A credited view that rounds to zero paise still consumes one of the twenty, because deriving "credited" from `credited > 0` would hand out a free view whenever the carry was low. And identity is deferrable: the alarm needs no account, and asking for a phone number before the user has seen the app work is the biggest drop-off in this category. The payout gate still exists, it just sits where the user wants something from us rather than where we want something from them.
+
 ## Status
 
-Economics modelled, PRD at v0.6, prototype tested, and the first shippable code written — **407 checks passing** (28 Kotlin core, 51 backend, 216 browser, 38 astronomy, 19 cross-validation, 55 security). The suite proves the safety property directly: an unverified view credits nothing, a total fill failure pays ₹0, half the views pay half the money, and a 26-day month pays on every day. The engine gets Puthandu, Poila Boishakh and Thai Pongal right across two years, including the sunset rule that moves Pongal from the 14th to the 15th in 2027.
+PRD at v0.8. **546 checks passing** — 78 Kotlin core, 88 backend, 216 browser, 38 astronomy, 19 cross-validation, 80 security, plus the economics no-loss gate across 36 combinations.
 
-Not started: the Android UI and data layers, PSP integration, brand partnerships, AdMob account and mediation. Not verified: the 60-date almanac cross-check, every drik date that is not the new year, every tithi and nakshatra, and the Tamil 60-year cycle spellings.
+**Launching this week was never possible, and the reason is external.** A new Play developer account must run a closed test with 12 testers, continuously, for 14 days before it can even apply for production access, and the clock cannot start until an APK exists. Realistic production date is late August. Everything is now sequenced to reach an uploadable build as fast as possible, because that wall is the long pole and starting it late moves launch day one for one.
+
+**The panchang calendar is out of v1** (PRD 19.3). It was dragging in the Swiss Ephemeris licence, a 60-date almanac cross-check in two cities, and native-speaker review of the Tamil cycle names — roughly four weeks for a feature that earns nothing directly. The widget still ships, showing next alarm, streak and today's earnings, which serves the original "remind me to open the app" purpose better than a tithi does. All the astronomy code and its 57 tests stay in the repo for v1.1.
+
+Not verified: the Postgres store has never been run because there is no database here, so its row locks and conflict handling are reviewed source. Nothing is deployed. Play Integrity, live SSV and the payment rail all still need real accounts. And the AdMob callback confirms a view but does not carry revenue, so until reporting is wired in the gross-per-view figure must be a floor rather than an estimate.
 
 ## Links
 

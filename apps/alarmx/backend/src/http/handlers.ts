@@ -20,7 +20,7 @@ import { DAILY_VIEW_CEILING, credit, tierFor } from '../reward';
 import { idempotencyKey, verifySsv } from '../ssv';
 import { StoredLedgerEntry, applyUserState, toUserState } from '../store';
 import { HttpError, consumeRateLimit, send, sendError } from './guard';
-import { mintSession, resolveSession, revokeSession } from './session';
+import { mintSession, revokeSession } from './session';
 import type { Ctx, Deps } from './types';
 
 /* ------------------------------------------------------------------- helpers */
@@ -309,6 +309,3 @@ export async function deleteAccount(ctx: Ctx, deps: Deps, userId: string): Promi
   await deps.store.deleteAccount(userId, deps.clock());
   send(ctx.res, 200, { ok: true });
 }
-
-/* Re-exported so the router can resolve identity in exactly one place. */
-export { resolveSession };
