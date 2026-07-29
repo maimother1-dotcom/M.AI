@@ -1178,6 +1178,7 @@ export const products: Product[] = [
     rating: 4.8,
     reviewCount: 412,
     stock: 120,
+    netQuantity: "3.8 g",
   },
   {
     id: "bt-002",
@@ -1199,6 +1200,7 @@ export const products: Product[] = [
     rating: 4.7,
     reviewCount: 356,
     stock: 140,
+    netQuantity: "6 ml",
   },
   {
     id: "bt-003",
@@ -1225,6 +1227,7 @@ export const products: Product[] = [
     rating: 4.6,
     reviewCount: 289,
     stock: 95,
+    netQuantity: "30 ml",
   },
   {
     id: "bt-004",
@@ -1246,6 +1249,7 @@ export const products: Product[] = [
     rating: 4.7,
     reviewCount: 267,
     stock: 108,
+    netQuantity: "5 g",
   },
   {
     id: "bt-005",
@@ -1267,6 +1271,7 @@ export const products: Product[] = [
     rating: 4.8,
     reviewCount: 494,
     stock: 165,
+    netQuantity: "1.2 g",
   },
   {
     id: "bt-006",
@@ -1288,6 +1293,7 @@ export const products: Product[] = [
     rating: 4.7,
     reviewCount: 331,
     stock: 132,
+    netQuantity: "9 ml",
   },
   {
     id: "bt-007",
@@ -1309,6 +1315,7 @@ export const products: Product[] = [
     rating: 4.6,
     reviewCount: 174,
     stock: 87,
+    netQuantity: "6 g",
   },
   {
     id: "bt-008",
@@ -1335,6 +1342,7 @@ export const products: Product[] = [
     rating: 4.8,
     reviewCount: 378,
     stock: 116,
+    netQuantity: "30 ml",
   },
   {
     id: "bt-009",
@@ -1361,6 +1369,7 @@ export const products: Product[] = [
     rating: 4.7,
     reviewCount: 246,
     stock: 78,
+    netQuantity: "30 ml",
   },
   {
     id: "bt-010",
@@ -1382,6 +1391,7 @@ export const products: Product[] = [
     rating: 4.7,
     reviewCount: 203,
     stock: 94,
+    netQuantity: "100 ml",
   },
   {
     id: "bt-011",
@@ -1408,6 +1418,7 @@ export const products: Product[] = [
     rating: 4.9,
     reviewCount: 187,
     stock: 61,
+    netQuantity: "50 ml",
   },
   {
     id: "bt-012",
@@ -1429,6 +1440,7 @@ export const products: Product[] = [
     rating: 4.6,
     reviewCount: 94,
     stock: 72,
+    netQuantity: "50 ml",
   },
   {
     id: "bt-013",
@@ -1450,6 +1462,7 @@ export const products: Product[] = [
     rating: 4.6,
     reviewCount: 158,
     stock: 89,
+    netQuantity: "8 g",
   },
   {
     id: "bt-014",
@@ -1471,6 +1484,7 @@ export const products: Product[] = [
     rating: 4.7,
     reviewCount: 141,
     stock: 83,
+    netQuantity: "100 ml",
   },
 
   /* ======================================================================

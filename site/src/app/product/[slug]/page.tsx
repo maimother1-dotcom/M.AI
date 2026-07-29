@@ -9,6 +9,19 @@ import { MotifDivider } from "@/components/brand/Motif";
 import { Container, SectionHeading, Stars } from "@/components/ui";
 import { displayPrice } from "@/lib/currency";
 
+/**
+ * Rendered per request, because the price on this page must be the price
+ * checkout charges.
+ *
+ * This page reads the admin override store, which changes at runtime. Prerendered
+ * HTML cannot: `revalidatePath` does not reliably reach a route that was baked at
+ * build time, and `next start` renders in worker processes that would each hold
+ * their own stale copy. The result was a page showing the committed price while
+ * `/api/checkout/quote` returned the edited one. Do not make this static again
+ * while the catalogue is mutable at runtime.
+ */
+export const dynamic = "force-dynamic";
+
 export function generateStaticParams() {
   return products.map((p) => ({ slug: p.slug }));
 }

@@ -50,6 +50,31 @@ type StoreMode = "file" | "memory";
 let mode: StoreMode | null = null;
 let cache: OverrideMap | null = null;
 
+/**
+ * Fingerprint of the file the cache was built from — `mtimeMs:size`, or `""`
+ * when the file is absent.
+ *
+ * This exists because `next start` renders pages in worker processes separate
+ * from the one handling `/api/admin/*`. The admin worker writes the file and
+ * updates its own `cache`; a render worker that had already read the file would
+ * otherwise keep serving its first read forever, showing one price while
+ * checkout charged another. Re-reading on any change is what keeps every
+ * process on the same catalogue.
+ */
+let cacheStamp: string | null = null;
+
+/** Base catalogue with overrides applied. Rebuilt whenever `cache` changes. */
+let merged: Product[] | null = null;
+
+function fileStamp(): string {
+  try {
+    const stat = fs.statSync(OVERRIDES_PATH);
+    return `${stat.mtimeMs}:${stat.size}`;
+  } catch {
+    return "";
+  }
+}
+
 /** Probe once whether the filesystem is actually writable here. */
 function resolveMode(): StoreMode {
   if (mode) return mode;
@@ -65,31 +90,39 @@ function resolveMode(): StoreMode {
 
 /* ---------------------------------------------------- ADAPTER SEAM (read) */
 function readAll(): OverrideMap {
-  if (cache) return cache;
+  if (resolveMode() !== "file") {
+    cache ??= {};
+    return cache;
+  }
 
-  if (resolveMode() === "file") {
-    try {
-      const raw = fs.readFileSync(OVERRIDES_PATH, "utf8");
-      cache = JSON.parse(raw) as OverrideMap;
-    } catch {
-      // Missing or corrupt file: start clean rather than crashing the storefront.
-      cache = {};
-    }
-  } else {
+  const stamp = fileStamp();
+  if (cache && stamp === cacheStamp) return cache;
+
+  try {
+    const raw = fs.readFileSync(OVERRIDES_PATH, "utf8");
+    cache = JSON.parse(raw) as OverrideMap;
+  } catch {
+    // Missing or corrupt file: start clean rather than crashing the storefront.
     cache = {};
   }
+  cacheStamp = stamp;
+  merged = null; // the merged catalog was built from the previous contents
   return cache;
 }
 
 /* --------------------------------------------------- ADAPTER SEAM (write) */
 function writeAll(next: OverrideMap): void {
   cache = next;
+  merged = null;
   if (resolveMode() !== "file") return;
   // Write to a temp file and rename, so a crash mid-write cannot leave a
   // truncated JSON file that takes the catalog down on next boot.
   const tmp = `${OVERRIDES_PATH}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(next, null, 2), "utf8");
   fs.renameSync(tmp, OVERRIDES_PATH);
+  // Adopt the stamp we just produced, so this process does not immediately
+  // re-read its own write.
+  cacheStamp = fileStamp();
 }
 
 /* -------------------------------------------------- ADAPTER SEAM (describe) */
@@ -124,12 +157,13 @@ function applyOverride(product: Product, override: ProductOverride | undefined):
   };
 }
 
-let merged: Product[] | null = null;
-
 /** The catalog as customers should see it. Server-side only. */
 export function getCatalog(): Product[] {
-  if (merged) return merged;
+  // readAll() first, always: it is what notices the file has changed underneath
+  // us, and it clears `merged` when it has. Checking `merged` first would
+  // short-circuit that and pin this process to a stale catalogue.
   const overrides = readAll();
+  if (merged) return merged;
   merged = baseProducts.map((p) => applyOverride(p, overrides[p.id]));
   return merged;
 }

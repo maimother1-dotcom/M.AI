@@ -68,6 +68,23 @@ export interface Product {
 
   /** Units on hand. Drives the "last few" treatment and caps checkout quantity. */
   stock: number;
+
+  /**
+   * Net quantity, for the Legal Metrology declaration.
+   *
+   * Only measured goods need this — beauty products carry a volume or weight.
+   * Garments, footwear and accessories fall back to a count ("1 piece",
+   * "1 pair") via `defaultNetQuantity()`, which is the correct declaration for
+   * them under the rules.
+   */
+  netQuantity?: string;
+
+  /**
+   * Month and year of packing as "MM/YYYY", for the Legal Metrology
+   * declaration. Falls back to `COMPLIANCE.defaultPackedOn` when unset, which is
+   * the right shape for a catalogue packed in runs rather than continuously.
+   */
+  packedOn?: string;
 }
 
 export interface EditorialStory {

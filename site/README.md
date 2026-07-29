@@ -44,7 +44,7 @@ MOBILE=1 node scripts/checkout-walk.mjs
 node scripts/razorpay-check.mjs    # 15 signature-verification checks (no account needed)
 node scripts/admin-check.mjs       # admin surface, unauthenticated
 ADMIN_EMAIL=... ADMIN_PASSWORD=... ADMIN_TOTP_SECRET=... \
-  node scripts/admin-flow.mjs      # authenticated admin flow
+  node scripts/admin-flow.mjs      # 27 authenticated admin checks
 ```
 
 `security-check.mjs` tries to break the pricing authority: injecting prices, negative and
@@ -136,7 +136,7 @@ changes. Add one when you want order history and accounts.
 - **Strict** (nonce + `strict-dynamic`) on `/checkout/**` and `/api/**` — the routes where
   card details are entered. The realistic e-commerce attack is a skimmer injected into the
   payment page; this is the control that stops it.
-- **Standard** on catalog and editorial pages, so they stay statically prerendered.
+- **Standard** on catalog and editorial pages, so the prerendered ones keep working.
 
 A nonce only reaches Next's script tags on **dynamically rendered** routes — a prerendered
 page has no nonce and a nonce policy would block every script on it. Every page route under
@@ -181,10 +181,23 @@ admin records a small patch per product in an **overrides store**, and reads
 merge the patch over the base. So a bad edit is a one-line delete, not a
 migration, and "Revert to committed" always works.
 
-Every write calls `revalidatePath`, so a price change reaches the prerendered
-product and shop pages as well as the checkout total. That pairing is the point:
-showing one price and charging another is the worst thing this feature could do,
-and `scripts/admin-flow.mjs` asserts both move together.
+**The home, shop and product pages render per request** (`export const dynamic =
+"force-dynamic"`), because they read this store and the store changes at runtime.
+That is not a performance oversight, it is the fix for a real bug: prerendered
+HTML kept showing the committed price while `/api/checkout/quote` returned the
+edited one, so a customer could be charged more than the page said. Two things
+caused it, and both are fixed —
+
+- `revalidatePath` does not reliably invalidate a route that was baked at build
+  time, so the page never re-rendered;
+- `next start` renders pages in worker processes separate from the one serving
+  `/api/admin/*`, and the override cache in `src/lib/admin/store.ts` never
+  re-read the file, so each worker served its first read forever. It now
+  re-reads whenever the file's mtime or size changes.
+
+`scripts/admin-flow.mjs` asserts the page and the checkout agree after an edit
+**and** after a revert. The revert assertion is the one that was missing, and its
+absence is how this shipped.
 
 **Where it persists depends on the host, and the UI says which:**
 
@@ -200,8 +213,8 @@ Nothing else changes.
 
 ### Known limitation
 
-Server-rendered pages (home, shop, category, product) reflect edits immediately.
-Four client-rendered surfaces — search, wishlist, the cart drawer and the cart
+Server-rendered pages (home, shop, category, product) reflect edits immediately,
+per the section above. Four client-rendered surfaces — search, wishlist, the cart drawer and the cart
 page — read the catalogue bundled at build time, so they show committed prices
 until the next deploy. **Money is never affected**: checkout always re-prices
 from the override-aware catalogue on the server. Exporting and committing your
@@ -209,6 +222,44 @@ edits resolves the display drift.
 
 Orders are deliberately not in the admin. There is no order storage yet (see
 "No database" above), so an order list would be a lie. Add a database first.
+
+---
+
+## Selling in India — the statutory declarations
+
+Every pre-packaged commodity sold in India must carry six declarations under the
+Legal Metrology (Packaged Commodities) Rules 2011, and since the 2017 amendment
+an **e-commerce listing must show them on the product page before purchase**, not
+only on the parcel. This is actively enforced against online sellers.
+
+They live in `src/data/compliance.ts` and render in the **Product information**
+panel on every product page:
+
+| Declaration | Where it comes from |
+|---|---|
+| Common or generic name | `genericNameFor(subcategory)` — "Women's dress", not the piece's name |
+| Net quantity | `product.netQuantity`, or `defaultNetQuantity(category)` — "1 piece", "1 pair" |
+| Retail sale price | `product.priceMinor`, rendered as "MRP ₹… (inclusive of all taxes)" |
+| Country of origin | `COMPLIANCE.countryOfOrigin` — separately required by the Consumer Protection (E-Commerce) Rules 2020 |
+| Month and year of packing | `product.packedOn`, or `COMPLIANCE.defaultPackedOn` |
+| Manufacturer / packer | `COMPLIANCE.manufacturerName` + address |
+| Consumer care | `COMPLIANCE` name, address, phone, email |
+
+The MRP is also printed **unopened**, directly under the price, because a
+declaration behind a click is a weaker reading of the rule than it needs to be.
+It is read from the same `priceMinor` the server prices the cart from, so the
+declared MRP and the charged amount cannot diverge.
+
+**Two things are deliberately blank and will print as `[brackets]` until you fill
+them in.** `/admin` shows a red "Before you sell" banner listing them:
+
+1. **Your business details** in `COMPLIANCE`. Shipping the placeholders is itself
+   a violation.
+2. **`COSMETIC_LICENCE`** — manufacturing or importing cosmetics for sale in
+   India needs a CDSCO licence under the Drugs and Cosmetics Rules. A reseller
+   does not hold it, but must be able to produce the manufacturer's. Until you
+   have your supplier's number on file, `beautyCleared()` is false and you should
+   not take orders in the Beauty category.
 
 ---
 

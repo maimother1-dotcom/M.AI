@@ -10,6 +10,9 @@ export const metadata: Metadata = {
     "Every piece in the house — silk, leather, demi-fine jewellery, clean beauty and accessories, at 60 to 75 percent below boutique pricing.",
 };
 
+/** Reads the runtime override store — see the note in `product/[slug]/page.tsx`. */
+export const dynamic = "force-dynamic";
+
 export default function ShopPage() {
   const catalog = getCatalog();
   return (

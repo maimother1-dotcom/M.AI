@@ -118,8 +118,24 @@ const quote = await call("/api/checkout/quote", {
 check("the CHECKOUT QUOTE uses the new price", quote.data?.totals?.subtotalMinor === NEW_PRICE,
   `quote subtotal ${quote.data?.totals?.subtotalMinor}, expected ${NEW_PRICE}`);
 
-const pdp = await fetch(`${BASE}/product/chandni-silk-slip-dress`).then(r => r.text());
-check("the PRODUCT PAGE shows the new price", pdp.includes("1,234"), "₹1,234 not found in HTML");
+/**
+ * Read the price off the page itself, from the MRP declaration — the one figure
+ * on a product page that belongs to that product and nothing else. Comparing
+ * against `includes("1,234")` was not enough: it also matched a related-product
+ * card, and it passed against a stale build that happened to carry the same
+ * number, which is how a page/checkout divergence shipped unnoticed once.
+ */
+async function pdpPriceMinor() {
+  const html = await fetch(`${BASE}/product/chandni-silk-slip-dress`, {
+    cache: "no-store",
+  }).then(r => r.text());
+  const m = html.replace(/<!--.*?-->/g, "").match(/MRP\s*₹([\d,]+)\s*\(inclusive of all taxes\)/);
+  return m ? Number(m[1].replace(/,/g, "")) * 100 : null;
+}
+
+const pdpEdited = await pdpPriceMinor();
+check("the PRODUCT PAGE shows the new price", pdpEdited === NEW_PRICE,
+  `page shows ${pdpEdited}, expected ${NEW_PRICE}`);
 
 /* ---- Stock is enforced from the override too ---- */
 console.log("\n5. Stock from the override is enforced");
@@ -144,6 +160,17 @@ const quoteAfter = await call("/api/checkout/quote", {
 check("checkout returns to the committed price",
   quoteAfter.data?.totals?.subtotalMinor === original.priceMinor,
   `${quoteAfter.data?.totals?.subtotalMinor}`);
+
+// The assertion that was missing. Revert moved the checkout total back but left
+// the page showing the edited price, so the site displayed one figure and
+// charged another — with the customer being charged MORE than the page said.
+const pdpReverted = await pdpPriceMinor();
+check("the PRODUCT PAGE returns to the committed price",
+  pdpReverted === original.priceMinor,
+  `page shows ${pdpReverted}, expected ${original.priceMinor}`);
+check("the page and the checkout agree after revert",
+  pdpReverted === quoteAfter.data?.totals?.subtotalMinor,
+  `page ${pdpReverted} vs checkout ${quoteAfter.data?.totals?.subtotalMinor}`);
 
 /* ---- Logout ---- */
 console.log("\n7. Sign out");

@@ -11,6 +11,12 @@ import {
   TrustStrip,
 } from "@/components/home/Sections";
 
+/**
+ * Bestsellers and New arrivals price from the runtime override store, so this
+ * page cannot be baked either — see the note in `product/[slug]/page.tsx`.
+ */
+export const dynamic = "force-dynamic";
+
 export default function HomePage() {
   return (
     <>

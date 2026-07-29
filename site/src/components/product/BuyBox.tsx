@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useCart } from "@/components/cart/CartProvider";
 import { ProductImage } from "@/components/product/ProductImage";
 import { Button, Price, ProductBadge, Stars } from "@/components/ui";
+import { declarationsFor } from "@/data/compliance";
 import { displayPrice, savingPercent } from "@/lib/currency";
 import { FREE_SHIPPING_THRESHOLD } from "@/lib/limits";
 import type { Product } from "@/lib/types";
@@ -130,6 +131,12 @@ export function BuyBox({ product }: { product: Product }) {
             compareAtMinor={product.compareAtMinor}
             size="lg"
           />
+          {/* Legal Metrology Rule 6(1)(c): the retail sale price must read as
+              MRP inclusive of all taxes, and must be visible without the
+              customer having to open anything. */}
+          <p className="mt-2 text-xs text-ink-muted tabular">
+            MRP {displayPrice(product.priceMinor)} (inclusive of all taxes)
+          </p>
           {saving > 0 && (
             <p className="mt-2.5 text-xs text-ink-muted">
               Typical boutique price for this construction:{" "}
@@ -307,6 +314,27 @@ export function BuyBox({ product }: { product: Product }) {
               Returns are accepted for thirty days on unworn pieces with tags attached, and we
               pay the return courier. Beauty is returnable unopened only, for hygiene reasons.
             </p>
+          </Accordion>
+
+          {/* The statutory declarations. Required on the listing itself since the
+              2017 amendment to the Packaged Commodities Rules, not only on the
+              parcel — so this panel is not optional and must not be removed. */}
+          <Accordion
+            id="compliance"
+            title="Product information"
+            open={openPanel === "compliance"}
+            onToggle={setOpenPanel}
+          >
+            <dl className="space-y-3">
+              {declarationsFor(product).map((d) => (
+                <div key={d.label} className="grid gap-1 sm:grid-cols-[160px_1fr] sm:gap-4">
+                  <dt className="text-[11px] uppercase tracking-[0.12em] text-ink-muted">
+                    {d.label}
+                  </dt>
+                  <dd className="text-pretty leading-relaxed">{d.value}</dd>
+                </div>
+              ))}
+            </dl>
           </Accordion>
         </div>
       </div>
