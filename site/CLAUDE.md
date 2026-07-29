@@ -25,6 +25,17 @@ schemas in `src/lib/validation.ts` reject those on purpose.
 4. **Fulfilment belongs in the webhook,** not the success page. The customer's browser may
    never reach the success page.
 
+## Payments
+
+`getPaymentProvider()` in `src/lib/payments.ts` is the single decision point:
+Razorpay if its keys are set, else Stripe, else demo. Razorpay is preferred
+because Stripe India is invite-only and has no UPI.
+
+Never trust the payment result the browser returns. Razorpay's callback must be
+verified server-side (HMAC over `order_id|payment_id`) AND the payment re-fetched
+from Razorpay before a receipt renders. Webhooks verify over the RAW body — do
+not `await request.json()` before verifying, it destroys the signed bytes.
+
 ## Before reporting any change done
 
 ```bash
@@ -32,6 +43,7 @@ cd site
 npm run lint && npm run typecheck && npm run build
 npm run start -- -p 3100 &
 node scripts/security-check.mjs      # must be 26/26
+node scripts/razorpay-check.mjs      # must be 15/15
 node scripts/checkout-walk.mjs       # must pass
 MOBILE=1 node scripts/checkout-walk.mjs
 ```

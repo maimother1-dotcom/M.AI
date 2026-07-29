@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { deliveryEstimate, verifyOrder } from "@/lib/orders";
 import { isLivePaymentAvailable, stripe } from "@/lib/stripe";
+import { fetchRazorpayPayment, verifyPaymentSignature } from "@/lib/razorpay";
 import { LIMITS, clientKey, rateLimit } from "@/lib/rate-limit";
 
 /**
@@ -29,6 +30,11 @@ const schema = z
   .object({
     orderToken: z.string().min(10).max(8000),
     paymentIntentId: z.string().max(120).optional().nullable(),
+    // Razorpay hands these back to the browser after checkout. They are only
+    // ever believed after the signature verifies against our key secret.
+    razorpayPaymentId: z.string().max(120).optional().nullable(),
+    razorpayOrderId: z.string().max(120).optional().nullable(),
+    razorpaySignature: z.string().max(256).optional().nullable(),
   })
   .strict();
 
@@ -68,7 +74,70 @@ export async function POST(request: Request) {
     );
   }
 
-  // 2. Payment status, from Stripe rather than from the request.
+  // 2a. Razorpay: the signature proves Razorpay processed THIS payment for THIS
+  //     order — a browser cannot forge it without our key secret. Then the
+  //     payment is re-fetched so a receipt reflects Razorpay's view, not the
+  //     browser's claim.
+  if (order.paymentMode === "razorpay") {
+    const { razorpayPaymentId, razorpayOrderId, razorpaySignature } = parsed.data;
+
+    if (!razorpayPaymentId || !razorpayOrderId || !razorpaySignature) {
+      return NextResponse.json(
+        { error: "UNVERIFIABLE", message: "We could not verify the payment for this order." },
+        { status: 409 },
+      );
+    }
+
+    // The order id must be the one WE created, not one supplied alongside a
+    // signature for some other order.
+    if (razorpayOrderId !== order.paymentIntentId) {
+      return NextResponse.json(
+        { error: "ORDER_MISMATCH", message: "We could not verify this order." },
+        { status: 409 },
+      );
+    }
+
+    if (
+      !verifyPaymentSignature({
+        orderId: razorpayOrderId,
+        paymentId: razorpayPaymentId,
+        signature: razorpaySignature,
+      })
+    ) {
+      console.error(`[confirm] Razorpay signature failed for ${order.orderNumber}`);
+      return NextResponse.json(
+        { error: "INVALID_SIGNATURE", message: "We could not verify this order." },
+        { status: 409 },
+      );
+    }
+
+    const payment = await fetchRazorpayPayment(razorpayPaymentId);
+    if (!payment) {
+      return NextResponse.json(
+        { error: "VERIFY_FAILED", message: "We could not reach our payment processor." },
+        { status: 502 },
+      );
+    }
+    if (payment.status !== "captured") {
+      return NextResponse.json(
+        {
+          error: "NOT_PAID",
+          message: `This payment is ${payment.status}. Nothing has been charged yet.`,
+          status: payment.status,
+        },
+        { status: 409 },
+      );
+    }
+    // Without this, a valid small payment could be replayed against a large order.
+    if (payment.amount !== order.cart.totals.totalMinor) {
+      return NextResponse.json(
+        { error: "AMOUNT_MISMATCH", message: "We could not verify this order." },
+        { status: 409 },
+      );
+    }
+  }
+
+  // 2b. Payment status, from Stripe rather than from the request.
   if (order.paymentMode === "stripe") {
     const intentId = parsed.data.paymentIntentId ?? order.paymentIntentId;
 

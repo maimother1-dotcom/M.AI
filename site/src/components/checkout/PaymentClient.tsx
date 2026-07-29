@@ -21,14 +21,18 @@ import { useCart } from "@/components/cart/CartProvider";
 import { CheckoutSteps } from "@/components/checkout/CheckoutSteps";
 import { HANDOFF_KEY } from "@/components/checkout/CheckoutForm";
 import { OrderSummary } from "@/components/checkout/OrderSummary";
+import { RazorpayForm } from "@/components/checkout/RazorpayForm";
 import { Motif } from "@/components/brand/Motif";
 import { Button, ButtonLink } from "@/components/ui";
 import { displayPrice } from "@/lib/currency";
 import type { OrderTotals, ShippingMethod } from "@/lib/types";
 
 interface Handoff {
-  mode: "demo" | "stripe";
+  mode: "demo" | "stripe" | "razorpay";
   clientSecret: string | null;
+  razorpayOrderId?: string;
+  razorpayKeyId?: string;
+  prefill?: { name: string; email: string; contact: string };
   orderToken: string;
   orderNumber: string;
   totals: OrderTotals;
@@ -94,7 +98,9 @@ export function PaymentClient({ publishableKey }: { publishableKey: string | nul
     );
   }
 
-  const isLive = handoff.mode === "stripe" && handoff.clientSecret && stripePromise;
+  const isRazorpay =
+    handoff.mode === "razorpay" && handoff.razorpayOrderId && handoff.razorpayKeyId;
+  const isStripe = handoff.mode === "stripe" && handoff.clientSecret && stripePromise;
 
   return (
     <>
@@ -116,7 +122,20 @@ export function PaymentClient({ publishableKey }: { publishableKey: string | nul
             </div>
           </div>
 
-          {isLive ? (
+          {isRazorpay ? (
+            <RazorpayForm
+              handoff={{
+                razorpayOrderId: handoff.razorpayOrderId!,
+                razorpayKeyId: handoff.razorpayKeyId!,
+                orderToken: handoff.orderToken,
+                orderNumber: handoff.orderNumber,
+                totals: handoff.totals,
+                email: handoff.email,
+                name: handoff.name,
+                prefill: handoff.prefill,
+              }}
+            />
+          ) : isStripe ? (
             <Elements
               stripe={stripePromise}
               options={{
@@ -154,9 +173,11 @@ export function PaymentClient({ publishableKey }: { publishableKey: string | nul
             <p className="flex items-start gap-2.5">
               <LockIcon />
               <span>
-                {isLive
-                  ? "Card details are entered inside a frame served by Stripe and go directly to them. They never touch our servers, which keeps your card out of our reach entirely."
-                  : "This deployment has no payment keys configured, so no card is charged and none is stored."}
+                {isRazorpay
+                  ? "Card and UPI details are entered inside Razorpay's own window and go directly to them. They never touch our servers, which keeps your payment details out of our reach entirely."
+                  : isStripe
+                    ? "Card details are entered inside a frame served by Stripe and go directly to them. They never touch our servers, which keeps your card out of our reach entirely."
+                    : "This deployment has no payment keys configured, so no card is charged and none is stored."}
               </span>
             </p>
             <p className="flex items-start gap-2.5">

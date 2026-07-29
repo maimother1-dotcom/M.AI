@@ -29,7 +29,7 @@ interface ConfirmedOrder {
     country: string;
   };
   shippingMethod: string;
-  paymentMode: "demo" | "stripe";
+  paymentMode: "demo" | "stripe" | "razorpay";
   deliveryEstimate: string;
 }
 
@@ -47,8 +47,34 @@ export function SuccessClient() {
     async function confirm() {
       // Stripe appends these on its redirect back.
       const paymentIntentId = searchParams.get("payment_intent");
+
+      /*
+       * Razorpay writes a JSON blob here containing the payment proof; the demo
+       * flow writes a bare token string. Handle both.
+       */
+      let razorpay: {
+        razorpayPaymentId?: string;
+        razorpayOrderId?: string;
+        razorpaySignature?: string;
+      } = {};
+      const stored = sessionStorage.getItem(ORDER_KEY);
+      if (stored && stored.trim().startsWith("{")) {
+        try {
+          const parsed = JSON.parse(stored) as { orderToken?: string } & typeof razorpay;
+          razorpay = {
+            razorpayPaymentId: parsed.razorpayPaymentId,
+            razorpayOrderId: parsed.razorpayOrderId,
+            razorpaySignature: parsed.razorpaySignature,
+          };
+        } catch {
+          /* fall through to the plain-token path */
+        }
+      }
+
       const orderToken =
-        sessionStorage.getItem(ORDER_KEY) ??
+        (stored && stored.trim().startsWith("{")
+          ? (JSON.parse(stored) as { orderToken?: string }).orderToken
+          : stored) ??
         (() => {
           // The Stripe path never wrote ORDER_KEY, so fall back to the handoff.
           const raw = sessionStorage.getItem("lindienne.checkout.v1");
@@ -74,7 +100,7 @@ export function SuccessClient() {
         const response = await fetch("/api/orders/confirm", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ orderToken, paymentIntentId }),
+          body: JSON.stringify({ orderToken, paymentIntentId, ...razorpay }),
         });
         const data = await response.json();
 

@@ -84,8 +84,8 @@ export interface OrderRecord {
     country: string;
   };
   shippingMethod: string;
-  /** "demo" when no Stripe key was configured, "stripe" otherwise. */
-  paymentMode: "demo" | "stripe";
+  /** Which processor handled it. "demo" when none is configured. */
+  paymentMode: "demo" | "stripe" | "razorpay";
   paymentIntentId?: string;
 }
 

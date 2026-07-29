@@ -20,8 +20,7 @@ npm run dev                    # http://localhost:3000
 ```
 
 It works end to end with no payment keys at all. Checkout runs in **demo mode**: the payment
-page validates cards locally, no money moves, and nothing is sent to any third party. Add
-Stripe keys and the same page becomes Stripe's Payment Element with no code change.
+page validates cards locally, no money moves, and nothing is sent to any third party.
 
 ```bash
 npm run build && npm run start   # production build
@@ -42,6 +41,7 @@ node scripts/security-check.mjs    # 26 adversarial checks
 node scripts/checkout-walk.mjs     # full purchase in a real browser
 MOBILE=1 node scripts/checkout-walk.mjs
 
+node scripts/razorpay-check.mjs    # 15 signature-verification checks (no account needed)
 node scripts/admin-check.mjs       # admin surface, unauthenticated
 ADMIN_EMAIL=... ADMIN_PASSWORD=... ADMIN_TOTP_SECRET=... \
   node scripts/admin-flow.mjs      # authenticated admin flow
@@ -54,6 +54,51 @@ whole purchase and asserts the total is the same number in the drawer, the cart,
 the payment page and the receipt.
 
 Both must pass before shipping a change to anything under `src/lib/` or `src/app/api/`.
+
+---
+
+## Payments — Razorpay, Stripe, or demo
+
+`getPaymentProvider()` in `src/lib/payments.ts` picks one, and everything else
+follows. Razorpay wins when both are configured.
+
+| Provider | When it is used | Covers |
+|---|---|---|
+| **Razorpay** | `RAZORPAY_KEY_ID` + `RAZORPAY_KEY_SECRET` set | UPI, cards, netbanking, wallets, EMI |
+| **Stripe** | Stripe keys set, no Razorpay | Cards and Stripe's own methods |
+| **Demo** | Nothing set | Local card validation, no money moves |
+
+### Why Razorpay for India
+
+Stripe India is **invite-only** and **does not support UPI**. For a rupee-priced
+store selling to Indian customers, that rules it out — UPI is how most people
+pay. Razorpay is RBI-licensed, settles INR domestically, and covers every method
+Indian customers expect from one integration.
+
+Razorpay is implemented against its REST API directly, with no SDK: it is three
+endpoints and an HMAC scheme, and a dependency there would put supply-chain risk
+on the payment path for very little gain.
+
+### How a Razorpay payment is trusted
+
+1. We create the Order **server-side**, for the amount `priceCart()` computed.
+   Razorpay never sees a figure the browser chose.
+2. The customer pays inside Razorpay's own window. Card and UPI details never
+   enter our DOM.
+3. Razorpay returns a payment id, order id and signature to the browser. **None
+   of it is believed.** `/api/orders/confirm` verifies the HMAC against our key
+   secret, checks the order id is the one we issued, re-fetches the payment from
+   Razorpay, and requires `status === "captured"` with a matching amount.
+4. The webhook verifies its own signature over the **raw** body, separately.
+
+Step 3 is the point: a signature proves Razorpay processed *this* payment for
+*this* order, and a browser cannot forge one. `scripts/razorpay-check.mjs`
+covers 15 cases including wrong-secret, wrong-order, wrong-payment, truncated
+and bit-flipped signatures, and a concatenation-collision check on the
+`order|payment` separator.
+
+Fulfilment belongs in the webhook, not the confirmation page — a customer's
+browser may never reach the confirmation page.
 
 ---
 
@@ -210,7 +255,11 @@ scripts/                   security-check.mjs, checkout-walk.mjs
 
 1. Set `ORDER_SIGNING_SECRET` to at least 32 random characters. The app refuses to start in
    production without it.
-2. Add the three Stripe keys and register the webhook endpoint at `/api/webhooks/stripe`.
+2. Add `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` and `RAZORPAY_WEBHOOK_SECRET`, and register
+   the webhook endpoint at `/api/webhooks/razorpay` in the Razorpay dashboard
+   (Settings → Webhooks; subscribe to `payment.captured` and `payment.failed`).
+   Stripe is supported too — `/api/webhooks/stripe` — but is the wrong choice for
+   an Indian storefront.
 3. Move rate limiting to Upstash or Vercel KV. The in-memory bucket in `src/lib/rate-limit.ts`
    is per-instance, so on an autoscaled platform the effective limit is `limit × instances`.
 4. Add a database if you want order history, and wire fulfilment into the webhook handler

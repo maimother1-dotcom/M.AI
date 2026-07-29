@@ -4,6 +4,8 @@ import { CartError, priceCart } from "@/lib/pricing";
 import { checkoutSchema, validationError } from "@/lib/validation";
 import { LIMITS, clientKey, rateLimit } from "@/lib/rate-limit";
 import { isLivePaymentAvailable, stripe } from "@/lib/stripe";
+import { createRazorpayOrder, getRazorpayKeyId } from "@/lib/razorpay";
+import { getPaymentProvider } from "@/lib/payments";
 import {
   generateOrderNumber,
   isOrderSigningConfigured,
@@ -95,6 +97,8 @@ export async function POST(request: Request) {
     throw error;
   }
 
+  const provider = getPaymentProvider();
+
   const order: OrderRecord = {
     orderNumber: generateOrderNumber(),
     email: input.email,
@@ -110,12 +114,51 @@ export async function POST(request: Request) {
       country: input.shippingAddress.country,
     },
     shippingMethod: input.shippingMethod,
-    paymentMode: isLivePaymentAvailable() ? "stripe" : "demo",
+    paymentMode: provider,
   };
 
-  // 4a. Demo mode — no Stripe configured. Mint a signed order and let the
-  //     payment page run its local card check. No money moves.
-  if (!isLivePaymentAvailable() || !stripe) {
+  // 4a. Razorpay. The amount comes from cart.totals.totalMinor, which came from
+  //     the catalog — Razorpay never sees a figure the browser chose.
+  if (provider === "razorpay") {
+    try {
+      const rzpOrder = await createRazorpayOrder({
+        amountMinor: cart.totals.totalMinor,
+        currency: cart.currency,
+        receipt: order.orderNumber,
+        notes: {
+          orderNumber: order.orderNumber,
+          shippingMethod: input.shippingMethod,
+          promo: cart.appliedPromo ?? "",
+        },
+      });
+
+      order.paymentIntentId = rzpOrder.id;
+
+      return NextResponse.json({
+        mode: "razorpay",
+        razorpayOrderId: rzpOrder.id,
+        razorpayKeyId: getRazorpayKeyId(),
+        prefill: { name: input.name, email: input.email, contact: input.phone },
+        orderToken: signOrder(order),
+        orderNumber: order.orderNumber,
+        totals: cart.totals,
+        appliedPromo: cart.appliedPromo,
+      });
+    } catch (error) {
+      console.error("[checkout] Razorpay order failed:", error);
+      return NextResponse.json(
+        {
+          error: "PAYMENT_INIT_FAILED",
+          message: "We could not start the payment. No charge was made. Please try again.",
+        },
+        { status: 502 },
+      );
+    }
+  }
+
+  // 4b. Demo mode — nothing configured. Mint a signed order and let the payment
+  //     page run its local card check. No money moves.
+  if (provider === "demo" || !isLivePaymentAvailable() || !stripe) {
     return NextResponse.json({
       mode: "demo",
       orderToken: signOrder(order),
@@ -125,7 +168,7 @@ export async function POST(request: Request) {
     });
   }
 
-  // 4b. Stripe mode. The amount comes from `cart.totals.totalMinor`, which came
+  // 4c. Stripe mode. The amount comes from `cart.totals.totalMinor`, which came
   //     from the catalog. Stripe never sees a number the browser chose.
   try {
     const intent = await stripe.paymentIntents.create({

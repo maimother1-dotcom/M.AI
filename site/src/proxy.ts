@@ -58,11 +58,11 @@ function buildPolicy(scriptSrc: string): string {
     // tag for critical CSS. Inline style is a far weaker vector than inline
     // script — it cannot execute.
     `style-src 'self' 'unsafe-inline'`,
-    `img-src 'self' blob: data:`,
+    `img-src 'self' blob: data: https://cdn.razorpay.com`,
     // next/font self-hosts, so no third-party font origin is needed.
     `font-src 'self' data:`,
-    `connect-src 'self' https://api.stripe.com`,
-    `frame-src 'self' https://js.stripe.com https://hooks.stripe.com`,
+    `connect-src 'self' https://api.stripe.com https://api.razorpay.com https://lumberjack.razorpay.com`,
+    `frame-src 'self' https://js.stripe.com https://hooks.stripe.com https://api.razorpay.com https://checkout.razorpay.com`,
     `object-src 'none'`,
     `base-uri 'self'`,
     `form-action 'self'`,
@@ -78,7 +78,7 @@ export function proxy(request: NextRequest) {
     const response = NextResponse.next();
     response.headers.set(
       "Content-Security-Policy",
-      buildPolicy(`script-src 'self' 'unsafe-inline' https://js.stripe.com`),
+      buildPolicy(`script-src 'self' 'unsafe-inline' https://js.stripe.com https://checkout.razorpay.com`),
     );
     return response;
   }
@@ -86,7 +86,7 @@ export function proxy(request: NextRequest) {
   // Strict path: mint a nonce and hand it to Next via the request headers.
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const csp = buildPolicy(
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://js.stripe.com`,
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://js.stripe.com https://checkout.razorpay.com`,
   );
 
   const requestHeaders = new Headers(request.headers);
