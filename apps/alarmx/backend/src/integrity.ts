@@ -109,6 +109,17 @@ export const RATE_LIMITS = {
   login: { max: 5, windowMs: 60 * 1000 },
   withdrawal: { max: 3, windowMs: 24 * 60 * 60 * 1000 },
   accountCreationPerDevice: { max: 3, windowMs: 7 * 24 * 60 * 60 * 1000 },
+  /**
+   * The SSV callback needs its own, far looser, rule.
+   *
+   * Every AdMob callback in the product arrives from a small set of Google
+   * IPs, so a limit tuned for end-user traffic throttles **all** revenue at
+   * once. This bound exists only to cap an unauthenticated flood of ECDSA
+   * verifications; the control that actually limits what one account can earn
+   * is the 20-view daily ceiling, which is enforced per user regardless of
+   * where the callback came from.
+   */
+  ssvPerIp: { max: 6_000, windowMs: 60 * 1000 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /**
