@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { deliveryEstimate, verifyOrder } from "@/lib/orders";
+import { isOrderStoreConfigured, recordPaymentOutcome } from "@/lib/order-store";
 import { isLivePaymentAvailable, stripe } from "@/lib/stripe";
 import { fetchRazorpayPayment, verifyPaymentSignature } from "@/lib/razorpay";
 import { LIMITS, clientKey, rateLimit } from "@/lib/rate-limit";
@@ -74,6 +75,11 @@ export async function POST(request: Request) {
     );
   }
 
+  // Captured as verification proceeds, and only written to the order store once
+  // every check below has passed.
+  let paymentId: string | undefined;
+  let paymentMethod: string | undefined;
+
   // 2a. Razorpay: the signature proves Razorpay processed THIS payment for THIS
   //     order — a browser cannot forge it without our key secret. Then the
   //     payment is re-fetched so a receipt reflects Razorpay's view, not the
@@ -135,6 +141,9 @@ export async function POST(request: Request) {
         { status: 409 },
       );
     }
+
+    paymentId = razorpayPaymentId;
+    paymentMethod = payment.method;
   }
 
   // 2b. Payment status, from Stripe rather than from the request.
@@ -183,6 +192,33 @@ export async function POST(request: Request) {
         { error: "VERIFY_FAILED", message: "We could not reach our payment processor." },
         { status: 502 },
       );
+    }
+  }
+
+  /**
+   * Everything above has passed, so this order really is paid — record it.
+   *
+   * The webhook is the authority on fulfilment and often lands first; this is
+   * the backstop for the cases it does not cover, chiefly demo mode, which has
+   * no webhook at all. `recordPaymentOutcome` is idempotent, so whichever
+   * arrives second is a no-op rather than a second fulfilment.
+   *
+   * A failure here must not break the receipt. The customer has paid; showing
+   * them an error because our bookkeeping hiccuped would be the wrong trade, and
+   * the webhook will reconcile it.
+   */
+  if (isOrderStoreConfigured()) {
+    try {
+      const result = recordPaymentOutcome(order.orderNumber, {
+        status: "paid",
+        ...(paymentId && { paymentId }),
+        ...(paymentMethod && { paymentMethod }),
+      });
+      if (!result) {
+        console.warn(`[confirm] no stored order for ${order.orderNumber} — token predates the store?`);
+      }
+    } catch (error) {
+      console.error(`[confirm] could not mark ${order.orderNumber} paid:`, error);
     }
   }
 

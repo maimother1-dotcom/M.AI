@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import { verifyWebhookSignature } from "@/lib/razorpay";
+import {
+  getOrderByPaymentId,
+  getOrderByPaymentIntent,
+  isOrderStoreConfigured,
+  recordPaymentOutcome,
+} from "@/lib/order-store";
 
 /**
  * Razorpay webhook.
@@ -44,7 +50,10 @@ export async function POST(request: Request) {
 
   let event: {
     event?: string;
-    payload?: { payment?: { entity?: Record<string, unknown> } };
+    payload?: {
+      payment?: { entity?: Record<string, unknown> };
+      refund?: { entity?: Record<string, unknown> };
+    };
   };
   try {
     event = JSON.parse(rawBody);
@@ -53,39 +62,91 @@ export async function POST(request: Request) {
   }
 
   const payment = event.payload?.payment?.entity;
-  const paymentId = typeof payment?.id === "string" ? payment.id : "unknown";
+  const refund = event.payload?.refund?.entity;
+  // A refund event carries a refund entity, not a payment one, and points back at
+  // the payment it reverses. Reading only `payment.entity` would silently drop
+  // every refund on the floor.
+  const paymentId =
+    typeof payment?.id === "string"
+      ? payment.id
+      : typeof refund?.payment_id === "string"
+        ? refund.payment_id
+        : "unknown";
 
-  if (processed.has(paymentId)) {
+  // Keyed on the event id, not the payment id: a payment legitimately produces
+  // several events (captured, then refunded), and keying on the payment would
+  // make the second one look like a redelivery of the first.
+  const eventId = request.headers.get("x-razorpay-event-id") ?? `${event.event}:${paymentId}`;
+
+  if (processed.has(eventId)) {
     return NextResponse.json({ received: true, duplicate: true });
   }
   if (processed.size > MAX_TRACKED) processed.clear();
-  processed.add(paymentId);
+  processed.add(eventId);
+
+  /**
+   * Which of our orders this event is about.
+   *
+   * `notes.orderNumber` is what we set when we created the Razorpay order, so it
+   * is the direct answer. It is not guaranteed to survive every event shape
+   * though, so the Razorpay order id is the fallback — that one we always
+   * recorded ourselves.
+   */
+  function resolveOrderNumber(): string | null {
+    const notes = payment?.notes as Record<string, string> | undefined;
+    if (typeof notes?.orderNumber === "string" && notes.orderNumber) return notes.orderNumber;
+    if (!isOrderStoreConfigured()) return null;
+    const rzpOrderId = typeof payment?.order_id === "string" ? payment.order_id : null;
+    if (rzpOrderId) return getOrderByPaymentIntent(rzpOrderId)?.orderNumber ?? null;
+    // Refunds carry neither, so trace back through the payment they reverse.
+    if (paymentId !== "unknown") return getOrderByPaymentId(paymentId)?.orderNumber ?? null;
+    return null;
+  }
 
   switch (event.event) {
     case "payment.captured": {
-      const notes = payment?.notes as Record<string, string> | undefined;
       // Fulfilment belongs HERE, not on the success page — the customer's
-      // browser may never reach the success page. Write the order, decrement
-      // stock, send the confirmation email.
+      // browser may never reach the success page.
+      const orderNumber = resolveOrderNumber();
       console.info(
-        `[razorpay-webhook] captured: order ${notes?.orderNumber ?? "unknown"}, ` +
+        `[razorpay-webhook] captured: order ${orderNumber ?? "unknown"}, ` +
           `${payment?.amount} ${payment?.currency}, method ${payment?.method}`,
       );
+      if (orderNumber && isOrderStoreConfigured()) {
+        const result = recordPaymentOutcome(orderNumber, {
+          status: "paid",
+          paymentId,
+          ...(typeof payment?.method === "string" && { paymentMethod: payment.method }),
+        });
+        if (!result) {
+          // A capture we cannot match to an order is money taken for something
+          // we have no record of. Loud, because it needs a human.
+          console.error(
+            `[razorpay-webhook] CAPTURED PAYMENT WITH NO MATCHING ORDER: ${paymentId} (${orderNumber}). Reconcile manually.`,
+          );
+        }
+      }
       break;
     }
 
     case "payment.failed": {
-      const notes = payment?.notes as Record<string, string> | undefined;
-      console.warn(
-        `[razorpay-webhook] failed: order ${notes?.orderNumber ?? "unknown"} — ` +
-          `${(payment?.error_description as string) ?? "no reason given"}`,
-      );
+      const orderNumber = resolveOrderNumber();
+      const reason = (payment?.error_description as string) ?? "no reason given";
+      console.warn(`[razorpay-webhook] failed: order ${orderNumber ?? "unknown"} — ${reason}`);
+      if (orderNumber && isOrderStoreConfigured()) {
+        recordPaymentOutcome(orderNumber, { status: "failed", paymentId, failureReason: reason });
+      }
       break;
     }
 
-    case "refund.created":
+    case "refund.created": {
       console.info(`[razorpay-webhook] refund created for payment ${paymentId}`);
+      const orderNumber = resolveOrderNumber();
+      if (orderNumber && isOrderStoreConfigured()) {
+        recordPaymentOutcome(orderNumber, { status: "refunded", paymentId });
+      }
       break;
+    }
 
     default:
       // Acknowledge unhandled types so Razorpay stops retrying them.

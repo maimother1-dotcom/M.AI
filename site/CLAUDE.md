@@ -23,14 +23,22 @@ schemas in `src/lib/validation.ts` reject those on purpose.
 3. **Receipts are verified, never rendered from a query param.** `/api/orders/confirm`
    checks the HMAC and, in Stripe mode, re-fetches the PaymentIntent from Stripe.
 4. **Fulfilment belongs in the webhook,** not the success page. The customer's browser may
-   never reach the success page.
-5. **Any page that reads the admin override store must be `force-dynamic`.** That is `/`,
+   never reach the success page. `/api/orders/confirm` is a backstop and must stay
+   idempotent — both paths call `recordPaymentOutcome()`, and either can arrive first.
+5. **Orders are written before payment, not after.** `/api/checkout/session` records a
+   `pending` order and declines the checkout if it cannot. Never move that write to the
+   success path: a payment that succeeds while the webhook is down would leave a charged
+   customer with no order at all.
+6. **The order store is encrypted and stays that way.** It holds names, phones and home
+   addresses. Never add a plaintext dump, a debug log of an order, or an unauthenticated
+   read path — `scripts/orders-check.mjs` greps the file on disk for customer details.
+7. **Any page that reads the admin override store must be `force-dynamic`.** That is `/`,
    `/shop`, `/shop/[category]` and `/product/[slug]` today. The store changes at runtime;
    prerendered HTML does not, `revalidatePath` will not save you, and `next start` renders in
    worker processes that each cache their own copy. The failure mode is the page showing one
    price while checkout charges another — it has happened once already. `scripts/admin-flow.mjs`
    asserts page and checkout agree after both an edit and a revert.
-6. **The MRP on a product page is `product.priceMinor`,** the same field `priceCart()` prices
+8. **The MRP on a product page is `product.priceMinor`,** the same field `priceCart()` prices
    from. Never render the declaration from a separate source, or the declared MRP and the
    charged amount can drift apart — which is a Legal Metrology offence as well as a bug.
 
@@ -56,8 +64,14 @@ node scripts/razorpay-check.mjs      # must be 15/15
 node scripts/checkout-walk.mjs       # must pass
 MOBILE=1 node scripts/checkout-walk.mjs
 node scripts/admin-check.mjs         # 11/11 with admin configured, 4/4 without
-ADMIN_EMAIL=… ADMIN_PASSWORD=… ADMIN_TOTP_SECRET=… node scripts/admin-flow.mjs   # 27/27
+ADMIN_EMAIL=… ADMIN_PASSWORD=… ADMIN_TOTP_SECRET=… node scripts/admin-flow.mjs     # 27/27
+ADMIN_EMAIL=… ADMIN_PASSWORD=… ADMIN_TOTP_SECRET=… node scripts/orders-check.mjs   # 27/27
 ```
+
+Sign-in allows five attempts per fifteen minutes and the bucket is per-IP, so every suite
+that touches `/api/admin/login` — including `admin-check.mjs`, which deliberately fails
+logins — shares it. **Restart the server before each authenticated suite** or the later ones
+return 429s that read as failures. The limiter is in-memory, so a restart clears it.
 
 `data/catalog-overrides.json` is gitignored but **is read at build time**. A stale one left
 over from a previous run will bake the wrong prices into the build and make admin tests pass

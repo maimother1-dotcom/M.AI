@@ -12,6 +12,7 @@ import {
   signOrder,
   type OrderRecord,
 } from "@/lib/orders";
+import { isOrderStoreConfigured, saveOrder, type StoredOrder } from "@/lib/order-store";
 
 /**
  * Create a payment session.
@@ -30,6 +31,59 @@ import {
 
 export const runtime = "nodejs";
 
+/**
+ * Write the order down as `pending`, before the customer is asked to pay.
+ *
+ * Recording it first is the point. If we only wrote orders on success, every
+ * abandoned or failed payment would be invisible, and a payment that succeeded
+ * at the processor while our webhook was down would leave a charged customer
+ * with no order at all. A `pending` row that never advances is a question you
+ * can answer; a missing row is not.
+ */
+function persistPending(
+  order: OrderRecord,
+  cart: { currency: string; appliedPromo: string | null; lines: OrderRecord["cart"]["lines"]; totals: OrderRecord["cart"]["totals"] },
+  phone: string | undefined,
+): boolean {
+  if (!isOrderStoreConfigured()) return true; // dev without a secret: nothing to write to.
+  const now = new Date().toISOString();
+  const record: StoredOrder = {
+    orderNumber: order.orderNumber,
+    createdAt: order.createdAt,
+    updatedAt: now,
+    status: "pending",
+    paymentMode: order.paymentMode,
+    ...(order.paymentIntentId && { paymentIntentId: order.paymentIntentId }),
+    email: order.email,
+    name: order.name,
+    ...(phone && { phone }),
+    shippingAddress: order.shippingAddress,
+    shippingMethod: order.shippingMethod,
+    lines: cart.lines,
+    totals: cart.totals,
+    currency: cart.currency,
+    appliedPromo: cart.appliedPromo,
+  };
+  try {
+    saveOrder(record);
+    return true;
+  } catch (error) {
+    console.error(`[checkout] could not record order ${order.orderNumber}:`, error);
+    return false;
+  }
+}
+
+/** A fresh Response each call — a body can only be read once, so this cannot be a constant. */
+function storeFailed() {
+  return NextResponse.json(
+    {
+      error: "ORDER_NOT_RECORDED",
+      message: "We could not record your order, so we have not taken payment. Please try again.",
+    },
+    { status: 503 },
+  );
+}
+
 export async function POST(request: Request) {
   // 1. Rate limit.
   const limit = rateLimit(clientKey(request, "checkout"), LIMITS.checkout);
@@ -43,7 +97,10 @@ export async function POST(request: Request) {
   // 1b. Refuse early and legibly if this deployment cannot sign orders. Without
   //     a signing secret an order token could not be trusted later, so taking
   //     the payment first would be worse than declining now.
-  if (!isOrderSigningConfigured()) {
+  //     The order store needs the same secret, and needs it to be a real one:
+  //     taking a payment for an order that nothing records leaves a customer
+  //     charged with no way to prove what they bought.
+  if (!isOrderSigningConfigured() || (process.env.NODE_ENV === "production" && !isOrderStoreConfigured())) {
     console.error(
       "[checkout] ORDER_SIGNING_SECRET is not set. Generate one with `openssl rand -base64 48` " +
         "and add it to the deployment's environment variables.",
@@ -134,6 +191,10 @@ export async function POST(request: Request) {
 
       order.paymentIntentId = rzpOrder.id;
 
+      // Razorpay has an order but nobody has been charged, so failing here costs
+      // the customer nothing.
+      if (!persistPending(order, cart, input.phone)) return storeFailed();
+
       return NextResponse.json({
         mode: "razorpay",
         razorpayOrderId: rzpOrder.id,
@@ -159,6 +220,8 @@ export async function POST(request: Request) {
   // 4b. Demo mode — nothing configured. Mint a signed order and let the payment
   //     page run its local card check. No money moves.
   if (provider === "demo" || !isLivePaymentAvailable() || !stripe) {
+    if (!persistPending(order, cart, input.phone)) return storeFailed();
+
     return NextResponse.json({
       mode: "demo",
       orderToken: signOrder(order),
@@ -205,6 +268,8 @@ export async function POST(request: Request) {
     });
 
     order.paymentIntentId = intent.id;
+
+    if (!persistPending(order, cart, input.phone)) return storeFailed();
 
     return NextResponse.json({
       mode: "stripe",

@@ -45,7 +45,15 @@ node scripts/razorpay-check.mjs    # 15 signature-verification checks (no accoun
 node scripts/admin-check.mjs       # admin surface, unauthenticated
 ADMIN_EMAIL=... ADMIN_PASSWORD=... ADMIN_TOTP_SECRET=... \
   node scripts/admin-flow.mjs      # 27 authenticated admin checks
+ADMIN_EMAIL=... ADMIN_PASSWORD=... ADMIN_TOTP_SECRET=... \
+  node scripts/orders-check.mjs    # 27 order-storage checks
 ```
+
+Sign-in is rate limited to five attempts per fifteen minutes, per IP, and every
+suite that touches the login route shares that budget — `admin-check.mjs` spends
+it deliberately, on failed logins. Restart the server before each authenticated
+suite, or the later ones return 429s that look like failures. The limiter is
+in-memory, so a restart clears it.
 
 `security-check.mjs` tries to break the pricing authority: injecting prices, negative and
 absurd quantities, fabricated SKUs, non-existent variants, invented promo codes, unsigned
@@ -124,10 +132,9 @@ quiet no-op.
 **Card data never touches this server.** In Stripe mode the fields are served by Stripe
 inside their own frame and go directly to them. We receive a confirmation and nothing else.
 
-**There is no database.** Stripe is the order record in Stripe mode; an HMAC-signed token
-carries it in demo mode. `src/lib/orders.ts` is the single seam where Postgres or Supabase
-plugs in — replace `signOrder`/`verifyOrder` with inserts and selects and nothing else
-changes. Add one when you want order history and accounts.
+**Orders are recorded.** See "Orders" below. There is still no *customer* database — no
+accounts, no login, no order history for the shopper — and `src/lib/orders.ts` remains the
+seam where that plugs in.
 
 ### Content-Security-Policy
 
@@ -220,8 +227,65 @@ until the next deploy. **Money is never affected**: checkout always re-prices
 from the override-aware catalogue on the server. Exporting and committing your
 edits resolves the display drift.
 
-Orders are deliberately not in the admin. There is no order storage yet (see
-"No database" above), so an order list would be a lie. Add a database first.
+---
+
+## Orders
+
+Every checkout writes an order **before the customer is asked to pay**, as
+`pending`, and the processor moves it to `paid`, `failed` or `refunded`. They are
+listed at **`/admin/orders`** with everything needed to pack a parcel.
+
+Writing it first is the point. If orders were only recorded on success, an
+abandoned payment would leave no trace, and a payment that succeeded at the
+processor while the webhook was down would leave a charged customer with no order
+at all. A `pending` row that never advances is a question you can answer; a
+missing row is not. If the write fails, checkout is declined rather than taking
+money for an order nothing would remember.
+
+### Who marks an order paid
+
+| Source | Role |
+|---|---|
+| `/api/webhooks/razorpay`, `/api/webhooks/stripe` | The authority. Fires whether or not the customer's browser ever comes back. |
+| `/api/orders/confirm` | Backstop, after its existing signature and re-fetch checks pass. The only path in demo mode, which has no webhook. |
+
+Either can arrive first — Razorpay's webhook regularly beats the browser — so
+`recordPaymentOutcome()` is idempotent and refuses to walk an order backwards. A
+`failed` event arriving after a capture is ignored rather than stranding a real
+customer.
+
+### Encrypted at rest
+
+An order is a person's full name, email, phone number and home address. The store
+is **AES-256-GCM** on disk (`data/orders.enc.json`, mode `0600`), with the key
+derived from `ORDER_SIGNING_SECRET` by HKDF under a separate label — so the
+storage key and the token-signing key are cryptographically distinct despite
+coming from one secret. A fresh random IV per write; GCM's tag means a hand-edited
+file fails loudly rather than returning altered orders.
+
+Two consequences worth knowing before you rely on it:
+
+- **Losing `ORDER_SIGNING_SECRET` makes every stored order unreadable.** There is
+  no recovery. Back it up somewhere that is not the server.
+- **Changing it has the same effect.** The store says so plainly rather than
+  silently starting empty, which would look like your orders had vanished.
+
+`isOrderStoreConfigured()` is deliberately stricter than
+`isOrderSigningConfigured()`: the latter falls back to a per-process random secret
+outside production, which is fine for a short-lived receipt token and useless for
+storage, because orders written under it become unreadable at the next restart.
+
+Same durability caveat as the catalogue overrides: durable on a single server,
+**not durable on Vercel or any serverless host**, where the filesystem is
+ephemeral and per-instance. `/admin` says which you are on. Implement the three
+`ADAPTER SEAM` functions in `src/lib/order-store.ts` against Postgres before
+taking real orders on serverless.
+
+### Still to do here
+
+Stock is not decremented on payment, no confirmation email is sent, and there is
+no retention policy — personal data currently accumulates indefinitely, which is
+worth a decision before you have real customers in there.
 
 ---
 
@@ -313,8 +377,11 @@ scripts/                   security-check.mjs, checkout-walk.mjs
    an Indian storefront.
 3. Move rate limiting to Upstash or Vercel KV. The in-memory bucket in `src/lib/rate-limit.ts`
    is per-instance, so on an autoscaled platform the effective limit is `limit × instances`.
-4. Add a database if you want order history, and wire fulfilment into the webhook handler
-   rather than the success page — the customer's browser may never reach the success page.
-5. If you add an admin surface, it needs two-factor authentication before it ships. There is
-   no login anywhere in this codebase today, by design.
-6. Replace the sample reviews, and confirm each `compareAtMinor` against a real comparable.
+4. Back up `ORDER_SIGNING_SECRET` somewhere other than the server. Every stored order is
+   encrypted with a key derived from it, and losing it makes them permanently unreadable.
+5. On serverless, implement the `ADAPTER SEAM` functions in `src/lib/order-store.ts` against
+   a real database — the file store is not durable there and `/admin` will say so.
+6. Fill in `COMPLIANCE` in `src/data/compliance.ts`, and record your supplier's CDSCO licence
+   in `COSMETIC_LICENCE` before selling anything in the Beauty category.
+7. Replace the sample reviews, and confirm each `compareAtMinor` against a real comparable.
+8. Decide a retention policy for order data. Nothing currently expires.

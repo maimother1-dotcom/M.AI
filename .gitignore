@@ -31,3 +31,5 @@ next-env.d.ts
 .vercel
 *.tsbuildinfo
 site/data/catalog-overrides.json
+site/data/orders.enc.json
+site/data/orders.enc.json.tmp

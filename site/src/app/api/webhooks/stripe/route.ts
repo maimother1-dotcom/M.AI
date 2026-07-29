@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { isStripeEnabled, stripe } from "@/lib/stripe";
+import {
+  getOrderByPaymentIntent,
+  isOrderStoreConfigured,
+  recordPaymentOutcome,
+} from "@/lib/order-store";
 
 /**
  * Stripe webhook.
@@ -62,28 +67,50 @@ export async function POST(request: Request) {
     case "payment_intent.succeeded": {
       const intent = event.data.object;
       const orderNumber = intent.metadata?.orderNumber ?? "unknown";
-      // This is where fulfilment goes: write the order, decrement stock, send
-      // the confirmation email. All of it belongs HERE and not on the success
-      // page, because the customer's browser may never reach the success page.
+      // Fulfilment belongs HERE and not on the success page, because the
+      // customer's browser may never reach the success page.
       console.info(
         `[webhook] paid: order ${orderNumber}, ${intent.amount} ${intent.currency}`,
       );
+      if (isOrderStoreConfigured() && orderNumber !== "unknown") {
+        const result = recordPaymentOutcome(orderNumber, {
+          status: "paid",
+          paymentId: intent.id,
+          paymentMethod: intent.payment_method_types[0] ?? "card",
+        });
+        if (!result) {
+          console.error(
+            `[webhook] SUCCEEDED PAYMENT WITH NO MATCHING ORDER: ${intent.id} (${orderNumber}). Reconcile manually.`,
+          );
+        }
+      }
       break;
     }
 
     case "payment_intent.payment_failed": {
       const intent = event.data.object;
-      console.warn(
-        `[webhook] failed: order ${intent.metadata?.orderNumber ?? "unknown"} — ${
-          intent.last_payment_error?.message ?? "no reason given"
-        }`,
-      );
+      const orderNumber = intent.metadata?.orderNumber ?? "unknown";
+      const reason = intent.last_payment_error?.message ?? "no reason given";
+      console.warn(`[webhook] failed: order ${orderNumber} — ${reason}`);
+      if (isOrderStoreConfigured() && orderNumber !== "unknown") {
+        recordPaymentOutcome(orderNumber, {
+          status: "failed",
+          paymentId: intent.id,
+          failureReason: reason,
+        });
+      }
       break;
     }
 
     case "charge.refunded": {
       const charge = event.data.object;
       console.info(`[webhook] refunded: charge ${charge.id}`);
+      // A charge carries the intent it belongs to, which is what we stored.
+      const intentId = typeof charge.payment_intent === "string" ? charge.payment_intent : null;
+      if (isOrderStoreConfigured() && intentId) {
+        const order = getOrderByPaymentIntent(intentId);
+        if (order) recordPaymentOutcome(order.orderNumber, { status: "refunded" });
+      }
       break;
     }
 

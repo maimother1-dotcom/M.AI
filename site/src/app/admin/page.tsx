@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { cookies } from "next/headers";
+import { AdminNav } from "@/components/admin/AdminNav";
 import { ProductAdmin } from "@/components/admin/ProductAdmin";
 import { ADMIN_COOKIE, isAdminEnabled, readSession } from "@/lib/admin/auth";
 import { describeStore, getCatalog, getOverrides } from "@/lib/admin/store";
 import { beautyCleared, isComplianceConfigured } from "@/data/compliance";
+import { describeOrderStore } from "@/lib/order-store";
 import { Container } from "@/components/ui";
 
 export const metadata: Metadata = {
@@ -43,9 +45,17 @@ export default async function AdminPage() {
       "No cosmetic licence on file. Selling beauty in India needs your supplier's CDSCO licence recorded in COSMETIC_LICENCE. Until then, do not take orders in the Beauty category.",
     );
   }
+  const orderStore = describeOrderStore();
+  if (!orderStore.durable) {
+    blockers.push(`Orders: ${orderStore.note}`);
+  }
 
   return (
     <Container className="py-12 lg:py-16">
+      <AdminNav current="catalogue" />
+
+      <div className="h-8" />
+
       {blockers.length > 0 && (
         <div className="mb-10 border border-madder/40 bg-madder/5 p-5">
           <p className="eyebrow text-madder">Before you sell</p>
