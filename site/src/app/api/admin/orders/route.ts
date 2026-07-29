@@ -19,8 +19,8 @@ export async function GET() {
 
   try {
     return NextResponse.json({
-      orders: listOrders(),
-      store: describeOrderStore(),
+      orders: await listOrders(),
+      store: await describeOrderStore(),
     });
   } catch (error) {
     console.error("[admin] could not read orders:", error);

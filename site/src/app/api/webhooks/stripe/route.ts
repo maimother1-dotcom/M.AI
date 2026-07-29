@@ -73,7 +73,7 @@ export async function POST(request: Request) {
         `[webhook] paid: order ${orderNumber}, ${intent.amount} ${intent.currency}`,
       );
       if (isOrderStoreConfigured() && orderNumber !== "unknown") {
-        const result = recordPaymentOutcome(orderNumber, {
+        const result = await recordPaymentOutcome(orderNumber, {
           status: "paid",
           paymentId: intent.id,
           paymentMethod: intent.payment_method_types[0] ?? "card",
@@ -93,7 +93,7 @@ export async function POST(request: Request) {
       const reason = intent.last_payment_error?.message ?? "no reason given";
       console.warn(`[webhook] failed: order ${orderNumber} — ${reason}`);
       if (isOrderStoreConfigured() && orderNumber !== "unknown") {
-        recordPaymentOutcome(orderNumber, {
+        await recordPaymentOutcome(orderNumber, {
           status: "failed",
           paymentId: intent.id,
           failureReason: reason,
@@ -108,8 +108,8 @@ export async function POST(request: Request) {
       // A charge carries the intent it belongs to, which is what we stored.
       const intentId = typeof charge.payment_intent === "string" ? charge.payment_intent : null;
       if (isOrderStoreConfigured() && intentId) {
-        const order = getOrderByPaymentIntent(intentId);
-        if (order) recordPaymentOutcome(order.orderNumber, { status: "refunded" });
+        const order = await getOrderByPaymentIntent(intentId);
+        if (order) await recordPaymentOutcome(order.orderNumber, { status: "refunded" });
       }
       break;
     }

@@ -209,7 +209,7 @@ export async function POST(request: Request) {
    */
   if (isOrderStoreConfigured()) {
     try {
-      const result = recordPaymentOutcome(order.orderNumber, {
+      const result = await recordPaymentOutcome(order.orderNumber, {
         status: "paid",
         ...(paymentId && { paymentId }),
         ...(paymentMethod && { paymentMethod }),

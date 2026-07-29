@@ -92,14 +92,14 @@ export async function POST(request: Request) {
    * though, so the Razorpay order id is the fallback — that one we always
    * recorded ourselves.
    */
-  function resolveOrderNumber(): string | null {
+  async function resolveOrderNumber(): Promise<string | null> {
     const notes = payment?.notes as Record<string, string> | undefined;
     if (typeof notes?.orderNumber === "string" && notes.orderNumber) return notes.orderNumber;
     if (!isOrderStoreConfigured()) return null;
     const rzpOrderId = typeof payment?.order_id === "string" ? payment.order_id : null;
-    if (rzpOrderId) return getOrderByPaymentIntent(rzpOrderId)?.orderNumber ?? null;
+    if (rzpOrderId) return (await getOrderByPaymentIntent(rzpOrderId))?.orderNumber ?? null;
     // Refunds carry neither, so trace back through the payment they reverse.
-    if (paymentId !== "unknown") return getOrderByPaymentId(paymentId)?.orderNumber ?? null;
+    if (paymentId !== "unknown") return (await getOrderByPaymentId(paymentId))?.orderNumber ?? null;
     return null;
   }
 
@@ -107,13 +107,13 @@ export async function POST(request: Request) {
     case "payment.captured": {
       // Fulfilment belongs HERE, not on the success page — the customer's
       // browser may never reach the success page.
-      const orderNumber = resolveOrderNumber();
+      const orderNumber = await resolveOrderNumber();
       console.info(
         `[razorpay-webhook] captured: order ${orderNumber ?? "unknown"}, ` +
           `${payment?.amount} ${payment?.currency}, method ${payment?.method}`,
       );
       if (orderNumber && isOrderStoreConfigured()) {
-        const result = recordPaymentOutcome(orderNumber, {
+        const result = await recordPaymentOutcome(orderNumber, {
           status: "paid",
           paymentId,
           ...(typeof payment?.method === "string" && { paymentMethod: payment.method }),
@@ -130,20 +130,20 @@ export async function POST(request: Request) {
     }
 
     case "payment.failed": {
-      const orderNumber = resolveOrderNumber();
+      const orderNumber = await resolveOrderNumber();
       const reason = (payment?.error_description as string) ?? "no reason given";
       console.warn(`[razorpay-webhook] failed: order ${orderNumber ?? "unknown"} — ${reason}`);
       if (orderNumber && isOrderStoreConfigured()) {
-        recordPaymentOutcome(orderNumber, { status: "failed", paymentId, failureReason: reason });
+        await recordPaymentOutcome(orderNumber, { status: "failed", paymentId, failureReason: reason });
       }
       break;
     }
 
     case "refund.created": {
       console.info(`[razorpay-webhook] refund created for payment ${paymentId}`);
-      const orderNumber = resolveOrderNumber();
+      const orderNumber = await resolveOrderNumber();
       if (orderNumber && isOrderStoreConfigured()) {
-        recordPaymentOutcome(orderNumber, { status: "refunded", paymentId });
+        await recordPaymentOutcome(orderNumber, { status: "refunded", paymentId });
       }
       break;
     }

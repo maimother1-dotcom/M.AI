@@ -254,14 +254,50 @@ Either can arrive first — Razorpay's webhook regularly beats the browser — s
 `failed` event arriving after a capture is ignored rather than stranding a real
 customer.
 
+### Where they go
+
+`src/lib/order-store.ts` picks a backend from the environment:
+
+| Backend | When | Durable |
+|---|---|---|
+| **Postgres** | `DATABASE_URL` or `POSTGRES_URL` is set | Yes, anywhere — including serverless. Use this for real money. |
+| **File** | Neither is set and `./data` is writable | Yes on one long-lived server (a VPS). No on serverless. |
+| **Memory** | Neither is set and the filesystem is read-only | **No.** Production checkout refuses. |
+
+The table is created on first use (`create table if not exists`), so deploying is
+deploying. Point `DATABASE_URL` at your provider's **pooled** connection string —
+Neon, Supabase and Vercel Postgres all give you one — because serverless opens a
+connection per invocation.
+
+**In production, checkout refuses outright when the store is not durable.** Not a
+warning, a 503, with a log line naming the fix. Taking a payment for an order
+that evaporates when the instance recycles is worse than not taking it. The
+durability probe writes a real file rather than calling `access(W_OK)`, which
+reports success for root on a directory nobody can write to.
+
 ### Encrypted at rest
 
-An order is a person's full name, email, phone number and home address. The store
-is **AES-256-GCM** on disk (`data/orders.enc.json`, mode `0600`), with the key
-derived from `ORDER_SIGNING_SECRET` by HKDF under a separate label — so the
-storage key and the token-signing key are cryptographically distinct despite
-coming from one secret. A fresh random IV per write; GCM's tag means a hand-edited
-file fails loudly rather than returning altered orders.
+An order is a person's full name, email, phone number and home address.
+**AES-256-GCM**, with the key derived from `ORDER_SIGNING_SECRET` by HKDF under a
+separate label — so the storage key and the token-signing key are
+cryptographically distinct despite coming from one secret. Fresh random IV per
+write; GCM's tag means edited ciphertext fails loudly rather than returning
+altered orders.
+
+On Postgres the row is split deliberately:
+
+```
+order_number  created_at  status  payment_mode  payment_id  total_minor  currency   ← columns, queryable
+payload                                                                             ← encrypted blob
+```
+
+Status, dates, ids and totals stay as columns so the admin list sorts and totals
+in SQL. Everything that identifies a human — name, email, phone, address, and the
+line items that reveal what they bought — is in the blob. **Your database
+provider stores something it cannot read.** `scripts/orders-check.mjs` connects
+to Postgres directly and greps the row for all of it.
+
+On the file backend the whole file is one envelope, at mode `0600`.
 
 Two consequences worth knowing before you rely on it:
 
@@ -275,11 +311,12 @@ Two consequences worth knowing before you rely on it:
 outside production, which is fine for a short-lived receipt token and useless for
 storage, because orders written under it become unreadable at the next restart.
 
-Same durability caveat as the catalogue overrides: durable on a single server,
-**not durable on Vercel or any serverless host**, where the filesystem is
-ephemeral and per-instance. `/admin` says which you are on. Implement the three
-`ADAPTER SEAM` functions in `src/lib/order-store.ts` against Postgres before
-taking real orders on serverless.
+`/admin` names the active backend and warns when it is not durable.
+
+Note the catalogue overrides still carry the old caveat — they are file-only, so
+admin *price edits* remain non-durable on serverless even once orders are in
+Postgres. Orders were the part that could cost a customer money, so they went
+first.
 
 ### Still to do here
 
@@ -379,8 +416,8 @@ scripts/                   security-check.mjs, checkout-walk.mjs
    is per-instance, so on an autoscaled platform the effective limit is `limit × instances`.
 4. Back up `ORDER_SIGNING_SECRET` somewhere other than the server. Every stored order is
    encrypted with a key derived from it, and losing it makes them permanently unreadable.
-5. On serverless, implement the `ADAPTER SEAM` functions in `src/lib/order-store.ts` against
-   a real database — the file store is not durable there and `/admin` will say so.
+5. Set `DATABASE_URL` to a **pooled** Postgres connection string. On serverless the app will
+   refuse to take orders without one, on purpose.
 6. Fill in `COMPLIANCE` in `src/data/compliance.ts`, and record your supplier's CDSCO licence
    in `COSMETIC_LICENCE` before selling anything in the Beauty category.
 7. Replace the sample reviews, and confirm each `compareAtMinor` against a real comparable.

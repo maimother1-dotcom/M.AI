@@ -12,7 +12,12 @@ import {
   signOrder,
   type OrderRecord,
 } from "@/lib/orders";
-import { isOrderStoreConfigured, saveOrder, type StoredOrder } from "@/lib/order-store";
+import {
+  isOrderStoreConfigured,
+  isOrderStoreDurable,
+  saveOrder,
+  type StoredOrder,
+} from "@/lib/order-store";
 
 /**
  * Create a payment session.
@@ -40,11 +45,11 @@ export const runtime = "nodejs";
  * with no order at all. A `pending` row that never advances is a question you
  * can answer; a missing row is not.
  */
-function persistPending(
+async function persistPending(
   order: OrderRecord,
   cart: { currency: string; appliedPromo: string | null; lines: OrderRecord["cart"]["lines"]; totals: OrderRecord["cart"]["totals"] },
   phone: string | undefined,
-): boolean {
+): Promise<boolean> {
   if (!isOrderStoreConfigured()) return true; // dev without a secret: nothing to write to.
   const now = new Date().toISOString();
   const record: StoredOrder = {
@@ -65,7 +70,7 @@ function persistPending(
     appliedPromo: cart.appliedPromo,
   };
   try {
-    saveOrder(record);
+    await saveOrder(record);
     return true;
   } catch (error) {
     console.error(`[checkout] could not record order ${order.orderNumber}:`, error);
@@ -97,13 +102,31 @@ export async function POST(request: Request) {
   // 1b. Refuse early and legibly if this deployment cannot sign orders. Without
   //     a signing secret an order token could not be trusted later, so taking
   //     the payment first would be worse than declining now.
-  //     The order store needs the same secret, and needs it to be a real one:
-  //     taking a payment for an order that nothing records leaves a customer
-  //     charged with no way to prove what they bought.
-  if (!isOrderSigningConfigured() || (process.env.NODE_ENV === "production" && !isOrderStoreConfigured())) {
+  if (!isOrderSigningConfigured()) {
     console.error(
       "[checkout] ORDER_SIGNING_SECRET is not set. Generate one with `openssl rand -base64 48` " +
         "and add it to the deployment's environment variables.",
+    );
+    return NextResponse.json(
+      {
+        error: "NOT_CONFIGURED",
+        message:
+          "Checkout is not fully configured on this deployment yet. No charge was made. Please try again shortly.",
+      },
+      { status: 503 },
+    );
+  }
+
+  // 1c. In production the store must also be DURABLE, not merely configured.
+  //     On serverless the filesystem is read-only and the in-memory fallback
+  //     dies with the instance, so an order taken there is money charged against
+  //     a record that no longer exists. Refusing is the only honest option; the
+  //     fix is a DATABASE_URL, and the admin says so.
+  if (process.env.NODE_ENV === "production" && !isOrderStoreDurable()) {
+    console.error(
+      "[checkout] REFUSING CHECKOUT: the order store is not durable on this host. " +
+        "Set DATABASE_URL (or POSTGRES_URL) to a Postgres connection string. " +
+        "Orders would otherwise be lost when the instance recycles.",
     );
     return NextResponse.json(
       {
@@ -193,7 +216,7 @@ export async function POST(request: Request) {
 
       // Razorpay has an order but nobody has been charged, so failing here costs
       // the customer nothing.
-      if (!persistPending(order, cart, input.phone)) return storeFailed();
+      if (!(await persistPending(order, cart, input.phone))) return storeFailed();
 
       return NextResponse.json({
         mode: "razorpay",
@@ -220,7 +243,7 @@ export async function POST(request: Request) {
   // 4b. Demo mode — nothing configured. Mint a signed order and let the payment
   //     page run its local card check. No money moves.
   if (provider === "demo" || !isLivePaymentAvailable() || !stripe) {
-    if (!persistPending(order, cart, input.phone)) return storeFailed();
+    if (!(await persistPending(order, cart, input.phone))) return storeFailed();
 
     return NextResponse.json({
       mode: "demo",
@@ -269,7 +292,7 @@ export async function POST(request: Request) {
 
     order.paymentIntentId = intent.id;
 
-    if (!persistPending(order, cart, input.phone)) return storeFailed();
+    if (!(await persistPending(order, cart, input.phone))) return storeFailed();
 
     return NextResponse.json({
       mode: "stripe",

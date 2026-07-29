@@ -150,9 +150,63 @@ check("no order was created by the forgery",
   (afterForge.data?.orders?.length ?? 0) === countBefore + 1,
   `${afterForge.data?.orders?.length} orders, expected ${countBefore + 1}`);
 
-/* ---- 6. The file on disk is encrypted ---- */
+/* ---- 6. Encrypted at rest ---- */
 console.log("\n6. Orders are encrypted at rest");
-if (!fs.existsSync(ORDERS_PATH)) {
+const backend = before.data?.store?.mode ?? "unknown";
+console.log(`  (backend: ${backend})`);
+
+// A second order, so the IV check below has two ciphertexts to compare. A
+// repeated (key, IV) pair in GCM is catastrophic, so it is worth asserting
+// rather than trusting that randomBytes was called.
+await call("/api/checkout/session", {
+  method: "POST",
+  body: {
+    lines: [{ sku: "cl-002", quantity: 1, size: "M", colorway: "Ivory" }],
+    shippingMethod: "standard",
+    email: "iv-check@example.com",
+    name: "IV Check",
+    phone: "+919876500000",
+    shippingAddress: { line1: "1 Test Road", city: "Kolkata", state: "West Bengal", postalCode: "700017", country: "IN" },
+  },
+});
+
+if (backend === "postgres") {
+  // Read the row straight out of Postgres, the way a leaked backup or a
+  // compromised database host would see it. None of the customer must be there.
+  const { Client } = await import("pg");
+  const client = new Client({ connectionString: process.env.DATABASE_URL ?? process.env.POSTGRES_URL });
+  await client.connect();
+  const { rows } = await client.query("select * from orders where order_number = $1", [orderNumber]);
+  const row = rows[0];
+  check("the order row exists in Postgres", Boolean(row));
+
+  const raw = JSON.stringify(row ?? {});
+  check("the customer's name is not readable in the database", !raw.includes("Order Check"));
+  check("the customer's email is not readable in the database", !raw.includes("orders-check@example.com"));
+  check("the customer's address is not readable in the database", !raw.includes("Park Street"));
+  check("the customer's phone is not readable in the database", !raw.includes("9876543210"));
+  check("what they bought is not readable in the database", !raw.includes("Chandni"));
+
+  // The queryable columns must still be there, or the admin list would have to
+  // decrypt every row to sort and total.
+  check("status stays queryable in a column", row?.status === "paid", row?.status);
+  check("the total stays queryable in a column", Number(row?.total_minor) === total, `${row?.total_minor}`);
+
+  let envelope = null;
+  try { envelope = JSON.parse(row?.payload ?? "null"); } catch {}
+  check("the payload is a versioned AES-GCM envelope",
+    envelope?.v === 1 && typeof envelope.iv === "string" && typeof envelope.tag === "string",
+    Object.keys(envelope ?? {}).join(","));
+
+  const second = await client.query(
+    "select payload from orders where order_number <> $1 order by created_at desc limit 1",
+    [orderNumber],
+  );
+  check("each row uses a fresh IV",
+    Boolean(second.rows[0]) && JSON.parse(second.rows[0].payload).iv !== envelope?.iv);
+
+  await client.end();
+} else if (!fs.existsSync(ORDERS_PATH)) {
   check("the order file exists on disk", false, `${ORDERS_PATH} not found — run this from site/`);
 } else {
   const raw = fs.readFileSync(ORDERS_PATH, "utf8");
@@ -171,22 +225,21 @@ if (!fs.existsSync(ORDERS_PATH)) {
   const mode = (fs.statSync(ORDERS_PATH).mode & 0o777).toString(8);
   check("the file is not world-readable", mode === "600", `mode ${mode}`);
 
-  // Two writes must never reuse an IV — a repeated (key, IV) pair in GCM is
-  // catastrophic, so this is worth asserting rather than assuming.
-  const firstIv = envelope?.iv;
-  await call("/api/checkout/session", {
+  // One more order, so there are two writes of the same file to compare.
+  const extra = await call("/api/checkout/session", {
     method: "POST",
     body: {
-      lines: [{ sku: "cl-002", quantity: 1, size: "M", colorway: "Ivory" }],
+      lines: [{ sku: "cl-001", quantity: 1, size: "M", colorway: "Ivory" }],
       shippingMethod: "standard",
-      email: "iv-check@example.com",
-      name: "IV Check",
-      phone: "+919876500000",
-      shippingAddress: { line1: "1 Test Road", city: "Kolkata", state: "West Bengal", postalCode: "700017", country: "IN" },
+      email: "iv-check-2@example.com",
+      name: "IV Check Two",
+      phone: "+919876500001",
+      shippingAddress: { line1: "2 Test Road", city: "Kolkata", state: "West Bengal", postalCode: "700018", country: "IN" },
     },
   });
-  const secondIv = JSON.parse(fs.readFileSync(ORDERS_PATH, "utf8")).iv;
-  check("each write uses a fresh IV", firstIv !== secondIv, `${firstIv} vs ${secondIv}`);
+  check("the extra order was accepted", extra.status === 200, `HTTP ${extra.status}`);
+  const nextIv = JSON.parse(fs.readFileSync(ORDERS_PATH, "utf8")).iv;
+  check("each write uses a fresh IV", nextIv !== envelope?.iv, `${envelope?.iv} vs ${nextIv}`);
 }
 
 /* ---- 7. Sign out closes the list again ---- */

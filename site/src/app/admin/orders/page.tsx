@@ -30,11 +30,11 @@ export default async function AdminOrdersPage() {
     redirect("/admin/login");
   }
 
-  const info = describeOrderStore();
+  const info = await describeOrderStore();
   let orders: StoredOrder[] = [];
   let readError: string | null = null;
   try {
-    orders = listOrders();
+    orders = await listOrders();
   } catch {
     readError =
       "The order store could not be decrypted. This almost always means ORDER_SIGNING_SECRET changed since these orders were written. The file is intact — restore the original secret and they will read again.";

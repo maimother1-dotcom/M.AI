@@ -45,7 +45,7 @@ export default async function AdminPage() {
       "No cosmetic licence on file. Selling beauty in India needs your supplier's CDSCO licence recorded in COSMETIC_LICENCE. Until then, do not take orders in the Beauty category.",
     );
   }
-  const orderStore = describeOrderStore();
+  const orderStore = await describeOrderStore();
   if (!orderStore.durable) {
     blockers.push(`Orders: ${orderStore.note}`);
   }
