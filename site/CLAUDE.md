@@ -45,7 +45,14 @@ schemas in `src/lib/validation.ts` reject those on purpose.
    worker processes that each cache their own copy. The failure mode is the page showing one
    price while checkout charges another — it has happened once already. `scripts/admin-flow.mjs`
    asserts page and checkout agree after both an edit and a revert.
-9. **The MRP on a product page is `product.priceMinor`,** the same field `priceCart()` prices
+9. **Shipping is downstream of payment and never asserts it.** `fulfilOrder()` re-reads the
+   order and checks `status === "paid"` itself rather than trusting its caller, records the
+   shipment id BEFORE assigning an AWB so a retry cannot create two shipments, and never
+   throws — a courier outage must not make a payment webhook look failed and get retried.
+10. **Customer-facing emails are claimed before they are sent.** The payment webhook and
+   `/api/orders/confirm` race on every order; `claimEmail()` is what stops a customer getting
+   two receipts, which reads as two charges.
+11. **The MRP on a product page is `product.priceMinor`,** the same field `priceCart()` prices
    from. Never render the declaration from a separate source, or the declared MRP and the
    charged amount can drift apart — which is a Legal Metrology offence as well as a bug.
 
@@ -72,7 +79,8 @@ node scripts/checkout-walk.mjs       # must pass
 MOBILE=1 node scripts/checkout-walk.mjs
 node scripts/admin-check.mjs         # 11/11 with admin configured, 4/4 without
 ADMIN_EMAIL=… ADMIN_PASSWORD=… ADMIN_TOTP_SECRET=… node scripts/admin-flow.mjs     # 27/27
-ADMIN_EMAIL=… ADMIN_PASSWORD=… ADMIN_TOTP_SECRET=… node scripts/orders-check.mjs   # 28/28 file, 29/29 Postgres
+ADMIN_EMAIL=… ADMIN_PASSWORD=… ADMIN_TOTP_SECRET=… node scripts/orders-check.mjs   # 39 file, 40 Postgres
+ADMIN_EMAIL=… ADMIN_PASSWORD=… ADMIN_TOTP_SECRET=… node scripts/shiprocket-check.mjs # 27/27
 ```
 
 Sign-in allows five attempts per fifteen minutes and the bucket is per-IP, so every suite

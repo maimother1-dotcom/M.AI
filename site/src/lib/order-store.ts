@@ -74,7 +74,39 @@ export interface StoredOrder {
   totals: OrderTotals;
   currency: string;
   appliedPromo: string | null;
+
+  /* --- Fulfilment. Set once the courier has the parcel. --- */
+  fulfilmentStatus?: FulfilmentStatus;
+  shiprocketOrderId?: number;
+  shipmentId?: number;
+  awbCode?: string;
+  courierName?: string;
+  trackingUrl?: string;
+  /** Last courier status string, verbatim, so it is never lost in translation. */
+  courierStatus?: string;
+  fulfilmentError?: string;
+
+  /* --- Which emails have gone out. See claimEmail(). --- */
+  confirmationEmailAt?: string;
+  despatchEmailAt?: string;
 }
+
+/**
+ * Where a parcel is.
+ *
+ * `unfulfilled` is the absence of an attempt; `failed` is an attempt that did not
+ * work and needs a human. Keeping them apart is the difference between "nothing
+ * has happened yet" and "something went wrong and nobody was told".
+ */
+export type FulfilmentStatus =
+  | "unfulfilled"
+  | "pushed"
+  | "awb-assigned"
+  | "in-transit"
+  | "delivered"
+  | "rto"
+  | "cancelled"
+  | "failed";
 
 type OrderMap = Record<string, StoredOrder>;
 
@@ -180,7 +212,7 @@ function decrypt(raw: string): string {
  */
 type OrderSecrets = Pick<
   StoredOrder,
-  "email" | "name" | "phone" | "shippingAddress" | "shippingMethod" | "lines" | "totals" | "appliedPromo" | "failureReason"
+  "email" | "name" | "phone" | "shippingAddress" | "shippingMethod" | "lines" | "totals" | "appliedPromo" | "failureReason" | "fulfilmentError"
 >;
 
 function secretsOf(order: StoredOrder): OrderSecrets {
@@ -194,6 +226,7 @@ function secretsOf(order: StoredOrder): OrderSecrets {
     totals: order.totals,
     appliedPromo: order.appliedPromo,
     ...(order.failureReason && { failureReason: order.failureReason }),
+    ...(order.fulfilmentError && { fulfilmentError: order.fulfilmentError }),
   };
 }
 
@@ -308,6 +341,25 @@ const SCHEMA = `
   create index if not exists orders_created_at_idx on orders (created_at desc);
   create index if not exists orders_payment_intent_idx on orders (payment_intent_id);
   create index if not exists orders_payment_id_idx on orders (payment_id);
+
+  -- Fulfilment, added after the table shipped. None of it is personal data — an
+  -- AWB identifies a parcel, not a person — so it stays queryable rather than
+  -- going in the encrypted payload, which is what lets the admin filter for
+  -- "paid but not yet shipped" without decrypting every row.
+  alter table orders add column if not exists fulfilment_status text;
+  alter table orders add column if not exists shiprocket_order_id bigint;
+  alter table orders add column if not exists shipment_id bigint;
+  alter table orders add column if not exists awb_code text;
+  alter table orders add column if not exists courier_name text;
+  alter table orders add column if not exists tracking_url text;
+  alter table orders add column if not exists courier_status text;
+  create index if not exists orders_fulfilment_idx on orders (fulfilment_status);
+  create index if not exists orders_shipment_idx on orders (shipment_id);
+
+  -- Which emails have gone out. Columns rather than payload, because claiming
+  -- one has to be a single atomic statement — see claimEmail().
+  alter table orders add column if not exists confirmation_email_at timestamptz;
+  alter table orders add column if not exists despatch_email_at timestamptz;
 `;
 
 /** Columns are nullable in SQL, and an absent field is not the same as `null` here. */
@@ -321,8 +373,26 @@ function rowToOrder(row: Record<string, unknown>): StoredOrder {
   const paymentId = optional(row.payment_id, String);
   const paymentMethod = optional(row.payment_method, String);
   const paidAt = optional(row.paid_at, (v) => (v as Date).toISOString());
+  const fulfilmentStatus = optional(row.fulfilment_status, (v) => v as FulfilmentStatus);
+  const shiprocketOrderId = optional(row.shiprocket_order_id, Number);
+  const shipmentId = optional(row.shipment_id, Number);
+  const awbCode = optional(row.awb_code, String);
+  const courierName = optional(row.courier_name, String);
+  const trackingUrl = optional(row.tracking_url, String);
+  const courierStatus = optional(row.courier_status, String);
+  const confirmationEmailAt = optional(row.confirmation_email_at, (v) => (v as Date).toISOString());
+  const despatchEmailAt = optional(row.despatch_email_at, (v) => (v as Date).toISOString());
 
   return {
+    ...(fulfilmentStatus !== undefined && { fulfilmentStatus }),
+    ...(shiprocketOrderId !== undefined && { shiprocketOrderId }),
+    ...(shipmentId !== undefined && { shipmentId }),
+    ...(awbCode !== undefined && { awbCode }),
+    ...(courierName !== undefined && { courierName }),
+    ...(trackingUrl !== undefined && { trackingUrl }),
+    ...(courierStatus !== undefined && { courierStatus }),
+    ...(confirmationEmailAt !== undefined && { confirmationEmailAt }),
+    ...(despatchEmailAt !== undefined && { despatchEmailAt }),
     orderNumber: row.order_number as string,
     createdAt: (row.created_at as Date).toISOString(),
     updatedAt: (row.updated_at as Date).toISOString(),
@@ -617,6 +687,235 @@ export async function describeOrderStore(): Promise<{
           : "This filesystem is read-only, so orders cannot be persisted and production checkout is refused. Set DATABASE_URL to a Postgres connection string.";
 
   return { mode: current, durable: isOrderStoreDurable() && reachable, count, note };
+}
+
+/* ---------------------------------------------------------- Fulfilment */
+
+export interface FulfilmentUpdate {
+  status: FulfilmentStatus;
+  shiprocketOrderId?: number;
+  shipmentId?: number;
+  awbCode?: string;
+  courierName?: string;
+  trackingUrl?: string;
+  courierStatus?: string;
+  error?: string;
+}
+
+/**
+ * Record where a parcel has got to.
+ *
+ * Every field is optional and only overwrites when supplied, because updates
+ * arrive from three places that each know different things: the push (which
+ * knows the shipment id), the AWB assignment (which knows the courier), and the
+ * courier webhook (which knows the status and nothing else). A webhook saying
+ * "in transit" must not blank out the AWB it does not carry.
+ *
+ * `error` is cleared on any successful update, so a transient failure that later
+ * resolves does not leave a stale red flag in the admin.
+ */
+export async function recordFulfilment(
+  orderNumber: string,
+  update: FulfilmentUpdate,
+): Promise<StoredOrder | null> {
+  if (resolveMode() === "postgres") {
+    const pool = await getPool();
+    const { rows } = await pool.query(
+      `update orders set
+         updated_at = $2,
+         fulfilment_status = $3,
+         shiprocket_order_id = coalesce($4, shiprocket_order_id),
+         shipment_id = coalesce($5, shipment_id),
+         awb_code = coalesce($6, awb_code),
+         courier_name = coalesce($7, courier_name),
+         tracking_url = coalesce($8, tracking_url),
+         courier_status = coalesce($9, courier_status)
+       where order_number = $1
+       returning *`,
+      [
+        orderNumber,
+        new Date().toISOString(),
+        update.status,
+        update.shiprocketOrderId ?? null,
+        update.shipmentId ?? null,
+        update.awbCode ?? null,
+        update.courierName ?? null,
+        update.trackingUrl ?? null,
+        update.courierStatus ?? null,
+      ],
+    );
+    if (!rows[0]) return null;
+
+    // The failure reason lives in the encrypted payload, since it can quote a
+    // courier's message about a specific address.
+    const updated = rowToOrder(rows[0]);
+    if (update.error) updated.fulfilmentError = update.error;
+    else delete updated.fulfilmentError;
+    await pool.query("update orders set payload = $2 where order_number = $1", [
+      orderNumber,
+      encrypt(JSON.stringify(secretsOf(updated))),
+    ]);
+    return updated;
+  }
+
+  const all = { ...readAll() };
+  const existing = all[orderNumber];
+  if (!existing) return null;
+
+  const updated: StoredOrder = {
+    ...existing,
+    updatedAt: new Date().toISOString(),
+    fulfilmentStatus: update.status,
+    ...(update.shiprocketOrderId !== undefined && { shiprocketOrderId: update.shiprocketOrderId }),
+    ...(update.shipmentId !== undefined && { shipmentId: update.shipmentId }),
+    ...(update.awbCode !== undefined && { awbCode: update.awbCode }),
+    ...(update.courierName !== undefined && { courierName: update.courierName }),
+    ...(update.trackingUrl !== undefined && { trackingUrl: update.trackingUrl }),
+    ...(update.courierStatus !== undefined && { courierStatus: update.courierStatus }),
+  };
+  if (update.error) updated.fulfilmentError = update.error;
+  else delete updated.fulfilmentError;
+
+  all[orderNumber] = updated;
+  writeAll(all);
+  return updated;
+}
+
+/* --------------------------------------------------------------- Emails */
+
+export type EmailKind = "confirmation" | "despatch";
+
+/**
+ * Claim the right to send one email, exactly once.
+ *
+ * Returns true to the single caller that won, false to everyone else. The
+ * confirmation endpoint and the payment webhook both fire on the same event and
+ * routinely race; without this a customer gets the same receipt twice, which
+ * reads as being charged twice.
+ *
+ * On Postgres the claim is one statement with `where … is null`, so two racing
+ * callers cannot both win. The file backend has to read-modify-write and can in
+ * principle double-send under concurrency — the same limitation as everywhere
+ * else in that backend, and the reason Postgres is what production should use.
+ *
+ * Claiming BEFORE sending, rather than recording after, is deliberate. If the
+ * send then fails we have marked an email as sent that was not, and the customer
+ * misses a receipt they can still find in their account of the payment. The
+ * other order risks sending the same email repeatedly to someone whose provider
+ * is timing out — worse, and much more visible.
+ */
+export async function claimEmail(orderNumber: string, kind: EmailKind): Promise<boolean> {
+  const column = kind === "confirmation" ? "confirmation_email_at" : "despatch_email_at";
+
+  if (resolveMode() === "postgres") {
+    const pool = await getPool();
+    const { rows } = await pool.query(
+      `update orders set ${column} = $2
+       where order_number = $1 and ${column} is null
+       returning order_number`,
+      [orderNumber, new Date().toISOString()],
+    );
+    return rows.length > 0;
+  }
+
+  const all = { ...readAll() };
+  const existing = all[orderNumber];
+  if (!existing) return false;
+
+  const key = kind === "confirmation" ? "confirmationEmailAt" : "despatchEmailAt";
+  if (existing[key]) return false;
+
+  all[orderNumber] = { ...existing, [key]: new Date().toISOString() };
+  writeAll(all);
+  return true;
+}
+
+/** Find by Shiprocket's shipment id, which is all their webhook reliably carries. */
+export async function getOrderByShipmentId(shipmentId: number): Promise<StoredOrder | undefined> {
+  if (resolveMode() === "postgres") {
+    const pool = await getPool();
+    const { rows } = await pool.query("select * from orders where shipment_id = $1 limit 1", [
+      shipmentId,
+    ]);
+    return rows[0] ? rowToOrder(rows[0]) : undefined;
+  }
+  return Object.values(readAll()).find((o) => o.shipmentId === shipmentId);
+}
+
+/* ------------------------------------------------------------ Retention */
+
+/**
+ * How long a customer's personal data is kept, in days.
+ *
+ * The default is 2,555 days — seven years. That is not arbitrary: Section 36 of
+ * the CGST Act requires records be retained for 72 months from the annual return
+ * due date, and seven years clears that with room for a late filing. Deleting
+ * sooner would put you on the wrong side of tax law, which is the more expensive
+ * mistake of the two.
+ *
+ * What is deleted is the whole order, personal data and financial record
+ * together, because by then the statutory reason to hold either has expired.
+ * Keep your own invoice records separately if you want the numbers to outlive
+ * the customer's address.
+ */
+export function retentionDays(): number {
+  const raw = Number(process.env.ORDER_RETENTION_DAYS);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 2555;
+}
+
+function cutoffDate(): Date {
+  return new Date(Date.now() - retentionDays() * 24 * 60 * 60 * 1000);
+}
+
+/** How many orders are past their retention period, without deleting anything. */
+export async function countExpiredOrders(): Promise<number> {
+  const cutoff = cutoffDate();
+
+  if (resolveMode() === "postgres") {
+    const pool = await getPool();
+    const { rows } = await pool.query(
+      "select count(*)::int as n from orders where created_at < $1",
+      [cutoff.toISOString()],
+    );
+    return Number(rows[0]?.n ?? 0);
+  }
+  if (resolveMode() === "disabled") return 0;
+
+  return Object.values(readAll()).filter((o) => new Date(o.createdAt) < cutoff).length;
+}
+
+/**
+ * Delete everything past the retention period.
+ *
+ * Nothing calls this on a timer. That is deliberate: a scheduled job that
+ * silently destroys business records should be something you turned on knowingly,
+ * not something that came with the box. Wire it to a Vercel Cron or a systemd
+ * timer hitting `/api/admin/retention` when you have decided the policy is right.
+ */
+export async function purgeExpiredOrders(): Promise<{ deleted: number; cutoff: string }> {
+  const cutoff = cutoffDate();
+
+  if (resolveMode() === "postgres") {
+    const pool = await getPool();
+    const { rows } = await pool.query(
+      "delete from orders where created_at < $1 returning order_number",
+      [cutoff.toISOString()],
+    );
+    return { deleted: rows.length, cutoff: cutoff.toISOString() };
+  }
+
+  if (resolveMode() === "disabled") return { deleted: 0, cutoff: cutoff.toISOString() };
+
+  const all = { ...readAll() };
+  let deleted = 0;
+  for (const [orderNumber, order] of Object.entries(all)) {
+    if (new Date(order.createdAt) < cutoff) {
+      delete all[orderNumber];
+      deleted += 1;
+    }
+  }
+  if (deleted > 0) writeAll(all);
+  return { deleted, cutoff: cutoff.toISOString() };
 }
 
 /** Used by the tests. Never wired to a route — there is no "delete all orders" button. */

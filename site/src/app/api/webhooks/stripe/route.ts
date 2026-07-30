@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { isStripeEnabled, stripe } from "@/lib/stripe";
+import { fulfilOrder, sendConfirmationEmail } from "@/lib/fulfilment";
 import {
   getOrderByPaymentIntent,
   isOrderStoreConfigured,
@@ -82,6 +83,11 @@ export async function POST(request: Request) {
           console.error(
             `[webhook] SUCCEEDED PAYMENT WITH NO MATCHING ORDER: ${intent.id} (${orderNumber}). Reconcile manually.`,
           );
+        } else {
+          // Awaited: a serverless instance freezes when this returns, so a
+          // dangling promise would never run. fulfilOrder never throws.
+          await sendConfirmationEmail(orderNumber);
+          await fulfilOrder(orderNumber);
         }
       }
       break;

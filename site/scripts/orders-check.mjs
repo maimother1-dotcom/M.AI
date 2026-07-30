@@ -242,8 +242,57 @@ if (backend === "postgres") {
   check("each write uses a fresh IV", nextIv !== envelope?.iv, `${envelope?.iv} vs ${nextIv}`);
 }
 
-/* ---- 7. Sign out closes the list again ---- */
-console.log("\n7. Sign out");
+/* ---- 7. The confirmation email is sent exactly once ---- */
+console.log("\n7. Emails are claimed once, never twice");
+{
+  const listed = await call("/api/admin/orders", { headers: authed });
+  const row = listed.data?.orders?.find((o) => o.orderNumber === orderNumber);
+  check("the confirmation email was claimed on payment", Boolean(row?.confirmationEmailAt),
+    row?.confirmationEmailAt);
+
+  // Section 4 already replayed the confirmation twice. If the claim were not
+  // atomic the timestamp would have moved, which is the visible symptom of a
+  // customer receiving two receipts for one charge.
+  await call("/api/orders/confirm", { method: "POST", body: { orderToken } });
+  const again = await call("/api/admin/orders", { headers: authed });
+  const row2 = again.data?.orders?.find((o) => o.orderNumber === orderNumber);
+  check("replaying the confirmation does not re-claim it",
+    row2?.confirmationEmailAt === row?.confirmationEmailAt,
+    `${row?.confirmationEmailAt} vs ${row2?.confirmationEmailAt}`);
+
+  check("no despatch email was claimed before anything shipped", !row2?.despatchEmailAt,
+    row2?.despatchEmailAt);
+}
+
+/* ---- 8. Retention reports before it destroys ---- */
+console.log("\n8. Retention");
+{
+  const anon = await call("/api/admin/retention");
+  check("the retention report is admin-only", anon.status === 401 || anon.status === 404,
+    `HTTP ${anon.status}`);
+
+  const anonPurge = await call("/api/admin/retention", { method: "POST" });
+  check("purging is admin-only", anonPurge.status === 401 || anonPurge.status === 404,
+    `HTTP ${anonPurge.status}`);
+
+  const report = await call("/api/admin/retention", { headers: authed });
+  check("the report reads", report.status === 200, `HTTP ${report.status}`);
+  check("it states a policy in days", Number(report.data?.retentionDays) > 0,
+    `${report.data?.retentionDays}`);
+  check("nothing new is expired yet", report.data?.expired === 0, `${report.data?.expired}`);
+
+  const beforePurge = (await call("/api/admin/orders", { headers: authed })).data?.orders?.length ?? 0;
+  const purge = await call("/api/admin/retention", { method: "POST", headers: authed });
+  check("the purge runs", purge.status === 200, `HTTP ${purge.status}`);
+  check("it deleted nothing, because nothing is old enough", purge.data?.deleted === 0,
+    `${purge.data?.deleted}`);
+
+  const afterPurge = (await call("/api/admin/orders", { headers: authed })).data?.orders?.length ?? 0;
+  check("no orders were harmed", afterPurge === beforePurge, `${beforePurge} → ${afterPurge}`);
+}
+
+/* ---- 9. Sign out closes the list again ---- */
+console.log("\n9. Sign out");
 await fetch(`${BASE}/api/admin/logout`, { method: "POST", headers: authed });
 const afterLogout = await call("/api/admin/orders");
 check("the orders list is closed after signing out",

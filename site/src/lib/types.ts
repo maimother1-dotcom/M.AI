@@ -85,6 +85,20 @@ export interface Product {
    * the right shape for a catalogue packed in runs rather than continuously.
    */
   packedOn?: string;
+
+  /**
+   * Packed parcel weight and outer dimensions, for the courier.
+   *
+   * Falls back to a category default in `src/data/shipping.ts`. Set it once you
+   * have weighed a real parcel — couriers reweigh at the hub and bill the
+   * difference, so a guess that is too small costs more than one that is too big.
+   */
+  parcel?: {
+    weightKg: number;
+    lengthCm: number;
+    breadthCm: number;
+    heightCm: number;
+  };
 }
 
 export interface EditorialStory {

@@ -46,7 +46,9 @@ node scripts/admin-check.mjs       # admin surface, unauthenticated
 ADMIN_EMAIL=... ADMIN_PASSWORD=... ADMIN_TOTP_SECRET=... \
   node scripts/admin-flow.mjs      # 27 authenticated admin checks
 ADMIN_EMAIL=... ADMIN_PASSWORD=... ADMIN_TOTP_SECRET=... \
-  node scripts/orders-check.mjs    # 27 order-storage checks
+  node scripts/orders-check.mjs    # 39 order, email and retention checks
+ADMIN_EMAIL=... ADMIN_PASSWORD=... ADMIN_TOTP_SECRET=... \
+  node scripts/shiprocket-check.mjs # 27 fulfilment checks (no Shiprocket account needed)
 ```
 
 Sign-in is rate limited to five attempts per fifteen minutes, per IP, and every
@@ -318,11 +320,101 @@ admin *price edits* remain non-durable on serverless even once orders are in
 Postgres. Orders were the part that could cost a customer money, so they went
 first.
 
+### Emails
+
+Two, both sent once and only once:
+
+| Email | Trigger |
+|---|---|
+| Order confirmation | Payment captured |
+| Despatch, with tracking | An AWB is assigned |
+
+`claimEmail()` decides who sends. The payment webhook and the confirmation
+endpoint fire on the same event and race routinely, and two receipts read to a
+customer as two charges — so the claim is a single `where … is null` update on
+Postgres, and whoever loses sends nothing.
+
+Set `RESEND_API_KEY` and `EMAIL_FROM` (a domain verified with Resend). With
+neither, sends are logged rather than performed, and `/admin/orders` says so
+plainly — a silent no-op would let "the customer gets an email" quietly become
+false. `deliver()` in `src/lib/email.ts` is the seam for SES, Postmark or SMTP.
+
+Sending never throws at its caller. Every send happens on a path where the
+customer has already paid, and failing a receipt — or making a payment webhook
+return non-200 and be retried — because a mail provider had a bad minute would be
+the wrong trade every time.
+
+### Retention
+
+Personal data is kept for `ORDER_RETENTION_DAYS`, default **2555 days (seven
+years)**. That is not arbitrary: Section 36 of the CGST Act wants records kept 72
+months from the annual return due date, and seven years clears it with room for a
+late filing. Deleting sooner puts you on the wrong side of tax law, which is the
+more expensive mistake.
+
+**Nothing runs on a timer.** A scheduled job that destroys business records
+should be something you switched on knowingly. `GET /api/admin/retention` reports
+what would go; `POST` does it. Point a Vercel Cron or a systemd timer at the POST
+with `Authorization: Bearer $RETENTION_CRON_SECRET` when you have decided the
+policy is right.
+
 ### Still to do here
 
-Stock is not decremented on payment, no confirmation email is sent, and there is
-no retention policy — personal data currently accumulates indefinitely, which is
-worth a decision before you have real customers in there.
+**Stock is not decremented on payment.** Doing it properly means reserving
+inventory at checkout and releasing it on failure or expiry, atomically — the
+naive version oversells the moment two people buy the last piece at once, and a
+half-built version is worse than none. It is the next real piece of work.
+
+---
+
+## Shipping — Shiprocket
+
+One integration reaches Delhivery, Bluedart, Ekart, Xpressbees and the rest,
+which at a boutique's volume is the difference between negotiating with five
+couriers and negotiating with none. REST directly, no SDK.
+
+```
+SHIPROCKET_EMAIL, SHIPROCKET_PASSWORD      an API user, not your login
+SHIPROCKET_PICKUP_LOCATION                 the nickname of a pickup address in their dashboard
+SHIPROCKET_WEBHOOK_TOKEN                   any long random string; paste the same one in their webhook settings
+SHIPROCKET_CHANNEL_ID                      optional
+```
+
+### What happens on payment
+
+1. The payment webhook marks the order paid.
+2. `fulfilOrder()` re-reads it and checks `status === "paid"` **itself**. Shipping
+   is downstream of payment and must never be able to assert one.
+3. It creates the Shiprocket order, records the shipment id, **then** assigns an
+   AWB. That order matters: recording first means a failure in the second step
+   cannot cause a retry to create a second shipment and send two parcels.
+4. The despatch email goes out with the tracking number.
+
+It never throws at the webhook — a courier outage must not make Razorpay think we
+failed to record a payment — and it is idempotent, so a retried webhook ships
+nothing twice. Failures land on the order and show in `/admin/orders` with a
+**Retry courier push** button, because an empty Shiprocket wallet or a briefly
+unserviceable pincode both come back.
+
+### Parcel weights are guesses until you weigh one
+
+`src/data/shipping.ts` holds category defaults, deliberately generous. Couriers
+charge on the greater of actual and volumetric weight, reweigh at the hub, and
+bill the difference back with a penalty — so a box slightly too big costs a few
+rupees and one too small costs a dispute. Set `parcel` per product once you have
+packed a real one.
+
+### The status webhook trusts almost nothing
+
+Shiprocket authenticates with a shared token in `x-api-key`, not an HMAC over the
+body — that proves the sender knows a secret, not that the body is untouched. So
+`/api/webhooks/shiprocket` is written to be harmless even if the body is a lie:
+it can only ever move a parcel's status. It cannot mark an order paid, change
+what anything cost, or create an order. An unrecognised courier status leaves our
+status alone rather than guessing, because losing track of a parcel beats
+claiming it was delivered when it was not — `"Out For Delivery"` contains
+`"deliver"`, and `scripts/shiprocket-check.mjs` asserts it is not read as
+delivered.
 
 ---
 
@@ -421,4 +513,8 @@ scripts/                   security-check.mjs, checkout-walk.mjs
 6. Fill in `COMPLIANCE` in `src/data/compliance.ts`, and record your supplier's CDSCO licence
    in `COSMETIC_LICENCE` before selling anything in the Beauty category.
 7. Replace the sample reviews, and confirm each `compareAtMinor` against a real comparable.
-8. Decide a retention policy for order data. Nothing currently expires.
+8. Add `SHIPROCKET_*` and register the status webhook at
+   `https://yourdomain/api/webhooks/shiprocket`. Without them, paid orders sit in
+   `/admin/orders` waiting to be shipped by hand, which is a fine way to start.
+9. Add `RESEND_API_KEY` and `EMAIL_FROM`, or customers get no confirmation email.
+10. Point a cron at `POST /api/admin/retention` once you are happy with the policy.

@@ -2,9 +2,18 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { AdminNav } from "@/components/admin/AdminNav";
+import { FulfilButton } from "@/components/admin/FulfilButton";
 import { ADMIN_COOKIE, isAdminEnabled, readSession } from "@/lib/admin/auth";
-import { describeOrderStore, listOrders, type StoredOrder } from "@/lib/order-store";
+import {
+  countExpiredOrders,
+  describeOrderStore,
+  listOrders,
+  retentionDays,
+  type StoredOrder,
+} from "@/lib/order-store";
 import { displayPrice } from "@/lib/currency";
+import { isEmailConfigured } from "@/lib/email";
+import { isShiprocketEnabled } from "@/lib/shiprocket";
 import { Container } from "@/components/ui";
 
 export const metadata: Metadata = {
@@ -13,6 +22,9 @@ export const metadata: Metadata = {
 };
 
 export const dynamic = "force-dynamic";
+
+/** Fulfilment states where a shipment already exists, so nothing needs pushing. */
+const SHIPPED = new Set(["pushed", "awb-assigned", "in-transit", "delivered", "rto", "cancelled"]);
 
 const STATUS_STYLE: Record<StoredOrder["status"], string> = {
   paid: "border-celadon bg-celadon/20 text-ink",
@@ -42,6 +54,10 @@ export default async function AdminOrdersPage() {
 
   const paid = orders.filter((o) => o.status === "paid");
   const revenueMinor = paid.reduce((sum, o) => sum + o.totals.totalMinor, 0);
+  const shiprocketOn = isShiprocketEnabled();
+  const emailOn = isEmailConfigured();
+  const expired = readError ? 0 : await countExpiredOrders();
+  const toShip = paid.filter((o) => !SHIPPED.has(o.fulfilmentStatus ?? "unfulfilled")).length;
 
   return (
     <Container className="py-12 lg:py-16">
@@ -49,6 +65,14 @@ export default async function AdminOrdersPage() {
 
       <h1 className="mt-8 font-display text-4xl">Orders</h1>
       <p className="mt-3 max-w-2xl text-sm leading-relaxed text-ink-soft">{info.note}</p>
+      <p className="mt-2 max-w-2xl text-xs leading-relaxed text-ink-muted">
+        {emailOn
+          ? "Confirmation and despatch emails are being sent."
+          : "Email is not configured, so customers get no confirmation. Set RESEND_API_KEY and EMAIL_FROM."}
+        {" "}Personal data is kept for {retentionDays()} days, then deleted; nothing runs on a
+        timer until you point one at <code>/api/admin/retention</code>.{" "}
+        {expired > 0 && `${expired} order${expired === 1 ? " is" : "s are"} past that now.`}
+      </p>
 
       {readError && (
         <p className="mt-6 border border-madder/40 bg-madder/5 p-5 text-sm leading-relaxed text-ink-soft">
@@ -62,6 +86,7 @@ export default async function AdminOrdersPage() {
             { label: "Orders", value: String(orders.length) },
             { label: "Paid", value: String(paid.length) },
             { label: "Paid revenue", value: displayPrice(revenueMinor) },
+            { label: "Awaiting despatch", value: String(toShip) },
           ].map((stat) => (
             <div key={stat.label}>
               <dt className="eyebrow">{stat.label}</dt>
@@ -132,6 +157,51 @@ export default async function AdminOrdersPage() {
                       </>
                     )}
                   </p>
+                </section>
+
+                <section>
+                  <p className="eyebrow mb-3">Fulfilment</p>
+                  {order.status !== "paid" ? (
+                    <p className="text-sm text-ink-muted">Nothing ships until it is paid.</p>
+                  ) : (
+                    <>
+                      <dl className="space-y-1.5 text-sm text-ink-soft">
+                        <Row label="Status" value={order.fulfilmentStatus ?? "unfulfilled"} />
+                        {order.courierName && <Row label="Courier" value={order.courierName} />}
+                        {order.awbCode && <Row label="AWB" value={order.awbCode} />}
+                        {order.courierStatus && (
+                          <Row label="Last scan" value={order.courierStatus} />
+                        )}
+                      </dl>
+
+                      {order.trackingUrl && (
+                        <a
+                          href={order.trackingUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="link-underline mt-3 inline-block text-xs"
+                        >
+                          Track this parcel
+                        </a>
+                      )}
+
+                      {order.fulfilmentError && (
+                        <p className="mt-3 border border-madder/40 bg-madder/5 p-3 text-xs leading-relaxed text-ink-soft">
+                          {order.fulfilmentError}
+                        </p>
+                      )}
+
+                      {shiprocketOn && !SHIPPED.has(order.fulfilmentStatus ?? "unfulfilled") && (
+                        <FulfilButton
+                          orderNumber={order.orderNumber}
+                          label={order.fulfilmentStatus === "failed" ? "Retry courier push" : "Push to courier"}
+                        />
+                      )}
+                      {shiprocketOn && order.fulfilmentStatus === "pushed" && !order.awbCode && (
+                        <FulfilButton orderNumber={order.orderNumber} label="Assign AWB" />
+                      )}
+                    </>
+                  )}
                 </section>
 
                 <section>

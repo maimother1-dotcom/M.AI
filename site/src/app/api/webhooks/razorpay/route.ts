@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { verifyWebhookSignature } from "@/lib/razorpay";
+import { fulfilOrder, sendConfirmationEmail } from "@/lib/fulfilment";
 import {
   getOrderByPaymentId,
   getOrderByPaymentIntent,
@@ -124,6 +125,14 @@ export async function POST(request: Request) {
           console.error(
             `[razorpay-webhook] CAPTURED PAYMENT WITH NO MATCHING ORDER: ${paymentId} (${orderNumber}). Reconcile manually.`,
           );
+        } else {
+          // Hand it to the courier. Awaited rather than fired and forgotten,
+          // because a serverless instance is frozen the moment this handler
+          // returns and a dangling promise would simply never run. `fulfilOrder`
+          // is idempotent and never throws, so this cannot cost us the 200 that
+          // stops Razorpay retrying.
+          await sendConfirmationEmail(orderNumber);
+          await fulfilOrder(orderNumber);
         }
       }
       break;
