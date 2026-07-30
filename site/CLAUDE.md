@@ -52,7 +52,15 @@ schemas in `src/lib/validation.ts` reject those on purpose.
 10. **Customer-facing emails are claimed before they are sent.** The payment webhook and
    `/api/orders/confirm` race on every order; `claimEmail()` is what stops a customer getting
    two receipts, which reads as two charges.
-11. **The MRP on a product page is `product.priceMinor`,** the same field `priceCart()` prices
+11. **Stock is reserved, not checked.** The gate is `update … where on_hand - reserved >= qty`,
+   one statement, so a race has exactly one winner. Never replace it with a read-then-decide,
+   and never settle a hold without `settleStock()` claiming the transition first — a retried
+   webhook would otherwise decrement inventory once per delivery.
+12. **Never hold a pool connection and then ask the pool for another.** `reserve()` runs in a
+   transaction on a checked-out client; a second `pool.query()` inside it deadlocks the pool
+   under exactly the burst the code exists to handle. That shipped once and showed up as 503s
+   instead of "sold out".
+13. **The MRP on a product page is `product.priceMinor`,** the same field `priceCart()` prices
    from. Never render the declaration from a separate source, or the declared MRP and the
    charged amount can drift apart — which is a Legal Metrology offence as well as a bug.
 
@@ -81,6 +89,7 @@ node scripts/admin-check.mjs         # 11/11 with admin configured, 4/4 without
 ADMIN_EMAIL=… ADMIN_PASSWORD=… ADMIN_TOTP_SECRET=… node scripts/admin-flow.mjs     # 27/27
 ADMIN_EMAIL=… ADMIN_PASSWORD=… ADMIN_TOTP_SECRET=… node scripts/orders-check.mjs   # 39 file, 40 Postgres
 ADMIN_EMAIL=… ADMIN_PASSWORD=… ADMIN_TOTP_SECRET=… node scripts/shiprocket-check.mjs # 27/27
+DATABASE_URL=… ADMIN_EMAIL=… …  node scripts/stock-check.mjs                          # 29/29
 ```
 
 Sign-in allows five attempts per fifteen minutes and the bucket is per-IP, so every suite

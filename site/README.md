@@ -49,6 +49,8 @@ ADMIN_EMAIL=... ADMIN_PASSWORD=... ADMIN_TOTP_SECRET=... \
   node scripts/orders-check.mjs    # 39 order, email and retention checks
 ADMIN_EMAIL=... ADMIN_PASSWORD=... ADMIN_TOTP_SECRET=... \
   node scripts/shiprocket-check.mjs # 27 fulfilment checks (no Shiprocket account needed)
+DATABASE_URL=... ADMIN_EMAIL=... ADMIN_PASSWORD=... ADMIN_TOTP_SECRET=... \
+  node scripts/stock-check.mjs     # 29 inventory checks, including a 12-way race
 ```
 
 Sign-in is rate limited to five attempts per fifteen minutes, per IP, and every
@@ -358,12 +360,52 @@ what would go; `POST` does it. Point a Vercel Cron or a systemd timer at the POS
 with `Authorization: Bearer $RETENTION_CRON_SECRET` when you have decided the
 policy is right.
 
-### Still to do here
+---
 
-**Stock is not decremented on payment.** Doing it properly means reserving
-inventory at checkout and releasing it on failure or expiry, atomically — the
-naive version oversells the moment two people buy the last piece at once, and a
-half-built version is worse than none. It is the next real piece of work.
+## Inventory
+
+The problem is one sentence: two people buy the last piece at the same moment,
+both requests read `stock === 1`, both pass, and one gets an apology instead of a
+dress. Reading stock and *then* deciding is a race both buyers win. The decision
+has to **be** the read:
+
+```sql
+update stock set reserved = reserved + $qty
+ where sku = $sku and on_hand - reserved >= $qty
+```
+
+Postgres holds a row lock for the statement. The loser matches zero rows and is
+told the piece is gone — **before anybody is charged**. `scripts/stock-check.mjs`
+fires twelve simultaneous checkouts at a product with one in stock and asserts
+exactly one succeeds.
+
+Three states, not one:
+
+| | |
+|---|---|
+| `reserve()` | At checkout, before payment. Holds the piece. |
+| `commitSale()` | On capture. It leaves both the shelf and the hold. |
+| `release()` | On failure, cancellation or expiry. Back on the shelf. |
+
+Decrementing only on payment would let two people be charged for one piece.
+Decrementing only at checkout would let an abandoned basket consume stock
+forever. Reserving and then settling is the only version correct at both ends.
+
+`settleStock()` claims the transition, so a webhook delivered three times
+decrements once — otherwise the shelf count drifts down on every retry until the
+shop believes it has sold out of things sitting in the stockroom.
+
+**Abandoned holds are swept.** A customer who closes the tab mid-payment tells us
+nothing, so `STOCK_RESERVATION_MINUTES` (default 60) bounds how long a checkout
+may hold stock, and `POST /api/admin/retention` releases anything past it — the
+same endpoint as the data purge, on purpose, because asking someone to configure
+two crons is how one of them never gets configured.
+
+**Postgres only, and deliberately so.** `next start` renders in several worker
+processes and serverless runs many instances, so a JSON file cannot make the
+guarantee above. Without `DATABASE_URL` there is no ledger, nothing is reserved,
+and the catalogue can oversell — which is the honest behaviour rather than a
+pretend one.
 
 ---
 
@@ -517,4 +559,5 @@ scripts/                   security-check.mjs, checkout-walk.mjs
    `https://yourdomain/api/webhooks/shiprocket`. Without them, paid orders sit in
    `/admin/orders` waiting to be shipped by hand, which is a fine way to start.
 9. Add `RESEND_API_KEY` and `EMAIL_FROM`, or customers get no confirmation email.
-10. Point a cron at `POST /api/admin/retention` once you are happy with the policy.
+10. Point a cron at `POST /api/admin/retention` — hourly, not daily. It releases abandoned
+   stock holds as well as purging expired data, and holds are the time-sensitive half.

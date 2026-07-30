@@ -3,11 +3,19 @@ import { getCatalogProduct } from "@/lib/admin/store";
 import { parcelFor, parcelForOrder } from "@/data/shipping";
 import {
   claimEmail,
+  findExpiredReservations,
   getOrder,
   isOrderStoreConfigured,
   recordFulfilment,
+  settleStock,
   type StoredOrder,
 } from "@/lib/order-store";
+import {
+  commitSale,
+  isStockLedgerEnabled,
+  release,
+  reservationMinutes,
+} from "@/lib/stock";
 import { sendEmail } from "@/lib/email";
 import { despatchEmail, orderConfirmationEmail } from "@/lib/emails/order-emails";
 import {
@@ -213,6 +221,73 @@ export async function sendDespatchEmail(orderNumber: string): Promise<boolean> {
   } catch (error) {
     console.error(`[fulfilment] despatch email for ${orderNumber} failed:`, error);
     return false;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Inventory settlement
+   ------------------------------------------------------------------------- */
+
+/**
+ * Settle an order's stock hold, once.
+ *
+ * `settleStock()` claims the transition, so a webhook delivered three times
+ * decrements inventory once. Without that the shelf count drifts downward on
+ * every retry until the shop believes it has sold out of things sitting in the
+ * stockroom.
+ *
+ * Claiming first and adjusting after is the safer order here. If the adjustment
+ * then fails, the ledger is one piece optimistic and a stock count fixes it; the
+ * other order risks decrementing repeatedly, which nobody notices until the
+ * catalogue reads zero.
+ */
+export async function settleOrderStock(
+  orderNumber: string,
+  outcome: "committed" | "released",
+): Promise<void> {
+  if (!isOrderStoreConfigured()) return;
+
+  try {
+    const order = await getOrder(orderNumber);
+    if (!order || order.stockState !== "reserved") return;
+
+    if (!(await settleStock(orderNumber, outcome))) return;
+
+    const lines = order.lines.map((line) => ({ sku: line.sku, quantity: line.quantity }));
+    if (outcome === "committed") await commitSale(lines);
+    else await release(lines);
+  } catch (error) {
+    console.error(`[stock] could not settle ${orderNumber} as ${outcome}:`, error);
+  }
+}
+
+/**
+ * Give back stock held by checkouts that were never paid for.
+ *
+ * A customer who closes the tab mid-payment tells us nothing, so nothing
+ * releases their hold. Without this, held stock only ever grows and the shop
+ * gradually looks sold out of everything anyone nearly bought.
+ *
+ * Nothing calls this on a timer — point a cron at `/api/admin/retention`, which
+ * runs it alongside the data purge.
+ */
+export async function sweepExpiredReservations(): Promise<number> {
+  if (!isOrderStoreConfigured() || !isStockLedgerEnabled()) return 0;
+
+  try {
+    const expired = await findExpiredReservations(reservationMinutes());
+    let released = 0;
+    for (const order of expired) {
+      await settleOrderStock(order.orderNumber, "released");
+      released += 1;
+    }
+    if (released > 0) {
+      console.info(`[stock] released ${released} expired reservation(s)`);
+    }
+    return released;
+  } catch (error) {
+    console.error("[stock] reservation sweep failed:", error);
+    return 0;
   }
 }
 

@@ -89,7 +89,21 @@ export interface StoredOrder {
   /* --- Which emails have gone out. See claimEmail(). --- */
   confirmationEmailAt?: string;
   despatchEmailAt?: string;
+
+  /** Whether this order is holding stock. See settleStock(). */
+  stockState?: StockState;
 }
+
+/**
+ * What this order has done to inventory.
+ *
+ * `reserved` means pieces are being held for it and will be released if it never
+ * pays. `committed` means they are sold. `released` means they went back on the
+ * shelf. Recording it on the order — rather than inferring it from payment
+ * status — is what makes settling idempotent: a webhook that arrives three times
+ * must not decrement stock three times.
+ */
+export type StockState = "reserved" | "committed" | "released";
 
 /**
  * Where a parcel is.
@@ -285,13 +299,25 @@ export function isOrderStoreDurable(): boolean {
  * file-backed VPS case and local development, where it is dead weight — and
  * would make `next build` resolve a native-ish dependency it never uses.
  */
-type PgPool = {
+export type PgPool = {
   query: (text: string, values?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>;
+  connect?: () => Promise<PgClient>;
+};
+
+/** One checked-out connection, which is what a transaction needs. */
+export type PgClient = {
+  query: (text: string, values?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>;
+  release: () => void;
 };
 
 let poolPromise: Promise<PgPool> | null = null;
 
-async function getPool(): Promise<PgPool> {
+/**
+ * Exported so the stock ledger shares this pool rather than opening a second
+ * one. On serverless, connections are the scarce resource — two pools per
+ * instance halves how many instances a database can carry.
+ */
+export async function getPool(): Promise<PgPool> {
   poolPromise ??= (async () => {
     const { Pool } = await import("pg");
     const pool = new Pool({
@@ -303,9 +329,13 @@ async function getPool(): Promise<PgPool> {
       ...(process.env.PGSSLMODE === "disable"
         ? {}
         : { ssl: { rejectUnauthorized: false } }),
-      // Serverless: one connection per invocation, released quickly. Point this
-      // at your provider's POOLED connection string, not the direct one.
-      max: Number(process.env.PGPOOL_MAX ?? 3),
+      // Point this at your provider's POOLED connection string, not the direct
+      // one. Eight rather than three: stock reservation checks out a connection
+      // for the length of a transaction, and a burst of people racing for the
+      // last piece is precisely when that happens — too small a pool turns
+      // "sold out" into a timeout. Raise it on a VPS, lower it on serverless
+      // where instance count multiplies it.
+      max: Number(process.env.PGPOOL_MAX ?? 8),
       idleTimeoutMillis: 10_000,
       connectionTimeoutMillis: 10_000,
     });
@@ -360,6 +390,10 @@ const SCHEMA = `
   -- one has to be a single atomic statement — see claimEmail().
   alter table orders add column if not exists confirmation_email_at timestamptz;
   alter table orders add column if not exists despatch_email_at timestamptz;
+
+  -- Whether this order is holding inventory. See settleStock().
+  alter table orders add column if not exists stock_state text;
+  create index if not exists orders_stock_state_idx on orders (stock_state, created_at);
 `;
 
 /** Columns are nullable in SQL, and an absent field is not the same as `null` here. */
@@ -382,6 +416,7 @@ function rowToOrder(row: Record<string, unknown>): StoredOrder {
   const courierStatus = optional(row.courier_status, String);
   const confirmationEmailAt = optional(row.confirmation_email_at, (v) => (v as Date).toISOString());
   const despatchEmailAt = optional(row.despatch_email_at, (v) => (v as Date).toISOString());
+  const stockState = optional(row.stock_state, (v) => v as StockState);
 
   return {
     ...(fulfilmentStatus !== undefined && { fulfilmentStatus }),
@@ -393,6 +428,7 @@ function rowToOrder(row: Record<string, unknown>): StoredOrder {
     ...(courierStatus !== undefined && { courierStatus }),
     ...(confirmationEmailAt !== undefined && { confirmationEmailAt }),
     ...(despatchEmailAt !== undefined && { despatchEmailAt }),
+    ...(stockState !== undefined && { stockState }),
     orderNumber: row.order_number as string,
     createdAt: (row.created_at as Date).toISOString(),
     updatedAt: (row.updated_at as Date).toISOString(),
@@ -474,8 +510,8 @@ export async function saveOrder(order: StoredOrder): Promise<void> {
       `insert into orders (
          order_number, created_at, updated_at, status, payment_mode,
          payment_intent_id, payment_id, payment_method, paid_at,
-         total_minor, currency, payload
-       ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         total_minor, currency, payload, stock_state
+       ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        on conflict (order_number) do update set
          updated_at = excluded.updated_at,
          status = excluded.status,
@@ -484,7 +520,10 @@ export async function saveOrder(order: StoredOrder): Promise<void> {
          payment_method = excluded.payment_method,
          paid_at = excluded.paid_at,
          total_minor = excluded.total_minor,
-         payload = excluded.payload`,
+         payload = excluded.payload,
+         -- Never clobber a settled hold with a re-save: settleStock() owns this
+         -- column once it has moved off reserved.
+         stock_state = coalesce(orders.stock_state, excluded.stock_state)`,
       [
         order.orderNumber,
         order.createdAt,
@@ -498,6 +537,7 @@ export async function saveOrder(order: StoredOrder): Promise<void> {
         order.totals.totalMinor,
         order.currency,
         encrypt(JSON.stringify(secretsOf(order))),
+        order.stockState ?? null,
       ],
     );
     return;
@@ -828,6 +868,71 @@ export async function claimEmail(orderNumber: string, kind: EmailKind): Promise<
   all[orderNumber] = { ...existing, [key]: new Date().toISOString() };
   writeAll(all);
   return true;
+}
+
+/* ----------------------------------------------------------------- Stock */
+
+/**
+ * Move this order's stock state, exactly once.
+ *
+ * Returns true only to the caller that actually caused the transition. Payment
+ * webhooks retry, and the confirmation endpoint races them, so without this a
+ * three-times-delivered `payment.captured` would decrement inventory three times
+ * — the shelf count would drift down until the shop believed it had sold out of
+ * things sitting in the stockroom.
+ *
+ * Only `reserved` can be settled. An order already committed or released is
+ * finished with inventory and stays that way.
+ */
+export async function settleStock(
+  orderNumber: string,
+  to: Exclude<StockState, "reserved">,
+): Promise<boolean> {
+  if (resolveMode() === "postgres") {
+    const pool = await getPool();
+    const { rows } = await pool.query(
+      `update orders set stock_state = $2, updated_at = $3
+        where order_number = $1 and stock_state = 'reserved'
+       returning order_number`,
+      [orderNumber, to, new Date().toISOString()],
+    );
+    return rows.length > 0;
+  }
+
+  const all = { ...readAll() };
+  const existing = all[orderNumber];
+  if (!existing || existing.stockState !== "reserved") return false;
+
+  all[orderNumber] = { ...existing, stockState: to, updatedAt: new Date().toISOString() };
+  writeAll(all);
+  return true;
+}
+
+/**
+ * Orders still holding stock they never paid for.
+ *
+ * A customer who closes the tab mid-payment tells us nothing, so nobody releases
+ * their hold. Without a sweep those accumulate until the shop looks sold out of
+ * everything anyone ever nearly bought.
+ */
+export async function findExpiredReservations(olderThanMinutes: number): Promise<StoredOrder[]> {
+  const cutoff = new Date(Date.now() - olderThanMinutes * 60 * 1000);
+
+  if (resolveMode() === "postgres") {
+    const pool = await getPool();
+    const { rows } = await pool.query(
+      `select * from orders
+        where stock_state = 'reserved' and status = 'pending' and created_at < $1
+        limit 500`,
+      [cutoff.toISOString()],
+    );
+    return rows.map(rowToOrder);
+  }
+  if (resolveMode() === "disabled") return [];
+
+  return Object.values(readAll()).filter(
+    (o) => o.stockState === "reserved" && o.status === "pending" && new Date(o.createdAt) < cutoff,
+  );
 }
 
 /** Find by Shiprocket's shipment id, which is all their webhook reliably carries. */

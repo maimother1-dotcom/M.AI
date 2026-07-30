@@ -18,6 +18,7 @@ import {
   saveOrder,
   type StoredOrder,
 } from "@/lib/order-store";
+import { release, reserve } from "@/lib/stock";
 
 /**
  * Create a payment session.
@@ -57,6 +58,7 @@ async function persistPending(
     createdAt: order.createdAt,
     updatedAt: now,
     status: "pending",
+    stockState: "reserved",
     paymentMode: order.paymentMode,
     ...(order.paymentIntentId && { paymentIntentId: order.paymentIntentId }),
     email: order.email,
@@ -177,6 +179,44 @@ export async function POST(request: Request) {
     throw error;
   }
 
+  // 3b. Hold the stock, before anyone is asked to pay.
+  //
+  //     `priceCart()` already checked stock, but that check reads and then
+  //     decides, which is a race two simultaneous buyers of the last piece both
+  //     win. This one puts the check inside the write, so exactly one of them
+  //     wins and the other is told now rather than after being charged.
+  const reservation = await reserve(
+    cart.lines.map((line) => ({ sku: line.sku, quantity: line.quantity })),
+  );
+  if (!reservation.ok) {
+    if (reservation.reason === "unavailable") {
+      const product = cart.lines.find((line) => line.sku === reservation.sku);
+      return NextResponse.json(
+        {
+          error: "OUT_OF_STOCK",
+          message:
+            reservation.available === 0
+              ? `${product?.name ?? "That piece"} has just sold out.`
+              : `Only ${reservation.available} of ${product?.name ?? "that piece"} left.`,
+          sku: reservation.sku,
+        },
+        { status: 409 },
+      );
+    }
+    console.error("[checkout] could not reserve stock");
+    return NextResponse.json(
+      {
+        error: "RESERVE_FAILED",
+        message: "We could not hold your pieces just now. No charge was made. Please try again.",
+      },
+      { status: 503 },
+    );
+  }
+
+  /** Anything after this point that abandons the order must give the stock back. */
+  const releaseReservation = () =>
+    release(cart.lines.map((line) => ({ sku: line.sku, quantity: line.quantity })));
+
   const provider = getPaymentProvider();
 
   const order: OrderRecord = {
@@ -216,7 +256,10 @@ export async function POST(request: Request) {
 
       // Razorpay has an order but nobody has been charged, so failing here costs
       // the customer nothing.
-      if (!(await persistPending(order, cart, input.phone))) return storeFailed();
+      if (!(await persistPending(order, cart, input.phone))) {
+        await releaseReservation();
+        return storeFailed();
+      }
 
       return NextResponse.json({
         mode: "razorpay",
@@ -230,6 +273,9 @@ export async function POST(request: Request) {
       });
     } catch (error) {
       console.error("[checkout] Razorpay order failed:", error);
+      // Nobody is going to pay for this, so the pieces go back on the shelf now
+      // rather than waiting an hour for the expiry sweep.
+      await releaseReservation();
       return NextResponse.json(
         {
           error: "PAYMENT_INIT_FAILED",
@@ -243,7 +289,10 @@ export async function POST(request: Request) {
   // 4b. Demo mode — nothing configured. Mint a signed order and let the payment
   //     page run its local card check. No money moves.
   if (provider === "demo" || !isLivePaymentAvailable() || !stripe) {
-    if (!(await persistPending(order, cart, input.phone))) return storeFailed();
+    if (!(await persistPending(order, cart, input.phone))) {
+      await releaseReservation();
+      return storeFailed();
+    }
 
     return NextResponse.json({
       mode: "demo",
@@ -292,7 +341,10 @@ export async function POST(request: Request) {
 
     order.paymentIntentId = intent.id;
 
-    if (!(await persistPending(order, cart, input.phone))) return storeFailed();
+    if (!(await persistPending(order, cart, input.phone))) {
+      await releaseReservation();
+      return storeFailed();
+    }
 
     return NextResponse.json({
       mode: "stripe",
@@ -306,6 +358,7 @@ export async function POST(request: Request) {
     // Never leak Stripe's raw error to the browser — it can contain account
     // details. Log it server-side, return something the customer can act on.
     console.error("[checkout] Stripe PaymentIntent failed:", error);
+    await releaseReservation();
     return NextResponse.json(
       {
         error: "PAYMENT_INIT_FAILED",

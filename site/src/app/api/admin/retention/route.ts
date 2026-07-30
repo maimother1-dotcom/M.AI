@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { requireAdmin } from "@/lib/admin/guard";
 import { countExpiredOrders, purgeExpiredOrders, retentionDays } from "@/lib/order-store";
+import { sweepExpiredReservations } from "@/lib/fulfilment";
+import { reservationMinutes, reservedTotal } from "@/lib/stock";
 
 /**
  * Run the retention purge.
@@ -39,6 +41,8 @@ export async function GET() {
   return NextResponse.json({
     retentionDays: retentionDays(),
     expired: await countExpiredOrders(),
+    reservationMinutes: reservationMinutes(),
+    reservedUnits: await reservedTotal(),
   });
 }
 
@@ -48,11 +52,16 @@ export async function POST(request: Request) {
     if (!auth.ok) return auth.response;
   }
 
+  // One timer, two jobs. Releasing abandoned holds needs to happen far more
+  // often than a data purge, and asking somebody to configure two crons to keep
+  // their shop from looking sold out is how one of them never gets configured.
+  const releasedHolds = await sweepExpiredReservations();
+
   const result = await purgeExpiredOrders();
   console.info(
     `[retention] purged ${result.deleted} orders created before ${result.cutoff} ` +
       `(policy: ${retentionDays()} days)`,
   );
 
-  return NextResponse.json({ ok: true, ...result, retentionDays: retentionDays() });
+  return NextResponse.json({ ok: true, ...result, releasedHolds, retentionDays: retentionDays() });
 }

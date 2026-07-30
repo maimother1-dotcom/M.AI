@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/admin/guard";
+import { setOnHand } from "@/lib/stock";
 import {
   clearOverride,
   describeStore,
@@ -126,6 +127,12 @@ export async function PATCH(request: Request) {
 
   try {
     const updated = saveOverride(id, patch);
+
+    // Keep the inventory ledger in step. Without this an admin could set stock
+    // to 50 and the checkout would still refuse, because the ledger is what
+    // actually gates a sale.
+    if (patch.stock !== undefined) await setOnHand(id, patch.stock);
+
     revalidateStorefront(updated.slug, updated.category);
     console.info(`[admin] ${auth.subject} updated ${id}`);
     return NextResponse.json({ product: updated, store: describeStore() });
@@ -151,6 +158,10 @@ export async function DELETE(request: Request) {
   if (!restored) {
     return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
   }
+
+  // Reverting the override returns the committed stock figure, so the ledger
+  // follows it back.
+  await setOnHand(id, restored.stock);
 
   revalidateStorefront(restored.slug, restored.category);
   console.info(`[admin] ${auth.subject} reverted ${id} to the committed catalog`);

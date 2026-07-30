@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { verifyWebhookSignature } from "@/lib/razorpay";
-import { fulfilOrder, sendConfirmationEmail } from "@/lib/fulfilment";
+import { fulfilOrder, sendConfirmationEmail, settleOrderStock } from "@/lib/fulfilment";
 import {
   getOrderByPaymentId,
   getOrderByPaymentIntent,
@@ -131,6 +131,8 @@ export async function POST(request: Request) {
           // returns and a dangling promise would simply never run. `fulfilOrder`
           // is idempotent and never throws, so this cannot cost us the 200 that
           // stops Razorpay retrying.
+          // The pieces are sold: off the shelf and out of the hold.
+          await settleOrderStock(orderNumber, "committed");
           await sendConfirmationEmail(orderNumber);
           await fulfilOrder(orderNumber);
         }
@@ -144,6 +146,8 @@ export async function POST(request: Request) {
       console.warn(`[razorpay-webhook] failed: order ${orderNumber ?? "unknown"} — ${reason}`);
       if (orderNumber && isOrderStoreConfigured()) {
         await recordPaymentOutcome(orderNumber, { status: "failed", paymentId, failureReason: reason });
+        // Nobody is paying for this, so the pieces go back on the shelf.
+        await settleOrderStock(orderNumber, "released");
       }
       break;
     }

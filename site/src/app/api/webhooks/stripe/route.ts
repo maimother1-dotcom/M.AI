@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { isStripeEnabled, stripe } from "@/lib/stripe";
-import { fulfilOrder, sendConfirmationEmail } from "@/lib/fulfilment";
+import { fulfilOrder, sendConfirmationEmail, settleOrderStock } from "@/lib/fulfilment";
 import {
   getOrderByPaymentIntent,
   isOrderStoreConfigured,
@@ -86,6 +86,8 @@ export async function POST(request: Request) {
         } else {
           // Awaited: a serverless instance freezes when this returns, so a
           // dangling promise would never run. fulfilOrder never throws.
+          // The pieces are sold: off the shelf and out of the hold.
+          await settleOrderStock(orderNumber, "committed");
           await sendConfirmationEmail(orderNumber);
           await fulfilOrder(orderNumber);
         }
@@ -104,6 +106,7 @@ export async function POST(request: Request) {
           paymentId: intent.id,
           failureReason: reason,
         });
+        await settleOrderStock(orderNumber, "released");
       }
       break;
     }

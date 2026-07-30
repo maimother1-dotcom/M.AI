@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { deliveryEstimate, verifyOrder } from "@/lib/orders";
 import { isOrderStoreConfigured, recordPaymentOutcome } from "@/lib/order-store";
-import { sendConfirmationEmail } from "@/lib/fulfilment";
+import { sendConfirmationEmail, settleOrderStock } from "@/lib/fulfilment";
 import { isLivePaymentAvailable, stripe } from "@/lib/stripe";
 import { fetchRazorpayPayment, verifyPaymentSignature } from "@/lib/razorpay";
 import { LIMITS, clientKey, rateLimit } from "@/lib/rate-limit";
@@ -220,6 +220,7 @@ export async function POST(request: Request) {
       } else {
         // Claimed exactly once, so whichever of this and the webhook arrives
         // second sends nothing.
+        await settleOrderStock(order.orderNumber, "committed");
         await sendConfirmationEmail(order.orderNumber);
       }
     } catch (error) {

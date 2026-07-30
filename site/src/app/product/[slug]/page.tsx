@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { products } from "@/data/products";
 import { getCatalogBySlug, getCatalogRelated } from "@/lib/admin/store";
+import { availableFor } from "@/lib/stock";
 import { getReviewsForProduct } from "@/data/reviews";
 import { BuyBox } from "@/components/product/BuyBox";
 import { ProductCard } from "@/components/product/ProductCard";
@@ -51,6 +52,17 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const product = getCatalogBySlug(slug);
   if (!product) notFound();
 
+  /**
+   * What is actually buyable, not what the catalogue says.
+   *
+   * The ledger subtracts stock other people are holding mid-checkout, so a piece
+   * that is spoken for reads as gone here rather than at the moment of payment.
+   * Showing it as available and then refusing at checkout is the worse order.
+   */
+  const availability = await availableFor([product.id]);
+  const available = availability.get(product.id) ?? product.stock;
+  const live = { ...product, stock: available };
+
   const related = getCatalogRelated(product, 4);
   const productReviews = getReviewsForProduct(product.slug);
 
@@ -71,7 +83,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
       priceCurrency: "INR",
       price: (product.priceMinor / 100).toFixed(2),
       availability:
-        product.stock > 0
+        available > 0
           ? "https://schema.org/InStock"
           : "https://schema.org/OutOfStock",
     },
@@ -91,7 +103,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
       />
 
       <Container className="py-10 lg:py-16">
-        <BuyBox product={product} />
+        <BuyBox product={live} />
       </Container>
 
       {/* Reviews */}
