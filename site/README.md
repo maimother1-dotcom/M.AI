@@ -51,6 +51,7 @@ ADMIN_EMAIL=... ADMIN_PASSWORD=... ADMIN_TOTP_SECRET=... \
   node scripts/shiprocket-check.mjs # 27 fulfilment checks (no Shiprocket account needed)
 DATABASE_URL=... ADMIN_EMAIL=... ADMIN_PASSWORD=... ADMIN_TOTP_SECRET=... \
   node scripts/stock-check.mjs     # 29 inventory checks, including a 12-way race
+node scripts/invoice-check.mjs     # 35 lookup and invoicing checks
 ```
 
 Sign-in is rate limited to five attempts per fifteen minutes, per IP, and every
@@ -495,6 +496,77 @@ them in.** `/admin` shows a red "Before you sell" banner listing them:
    does not hold it, but must be able to produce the manufacturer's. Until you
    have your supplier's number on file, `beautyCleared()` is false and you should
    not take orders in the Beauty category.
+
+---
+
+## Prices are tax-inclusive, and that is a legal requirement
+
+The figure on a product page is the figure the customer pays. GST is **inside**
+it, not added at checkout.
+
+This is not a preference. Every product page declares its price as "MRP …
+inclusive of all taxes" under the Legal Metrology rules, and Rule 18(2) of the
+Packaged Commodities Rules makes selling above the declared MRP an offence. A
+site that prints an MRP and then adds 12% at checkout commits that offence on
+every sale. It is also just what an Indian shopper expects — the price on the
+shelf is the price at the till.
+
+So `priceCart()` backs the tax **out**:
+
+```
+taxable = gross × 10000 / (10000 + rate_bps)
+total   = discounted subtotal + shipping        ← tax is not added
+```
+
+`src/lib/gst.ts` owns that arithmetic and the discount apportionment, and both
+`priceCart()` and the tax invoice import it — so the invoice can never disagree
+with the amount charged. `scripts/invoice-check.mjs` asserts the invoice total
+equals the charged total to the paisa.
+
+---
+
+## Invoices
+
+Every paid order gets a serial the first time it is looked up, and keeps it
+forever. Rule 46 wants a **consecutive number unique within a financial year**,
+so the counter lives in Postgres and is incremented in the statement that reads
+it — two orders paid in the same millisecond cannot take the same number.
+
+```
+LI/2026-27/000001
+```
+
+The document is a page with a print stylesheet rather than a generated PDF. The
+browser's own "Save as PDF" produces the same artefact without adding a PDF
+renderer to the path that handles names, addresses and tax identifiers, and it
+leaves the invoice as a URL the customer can revisit.
+
+**Without a GSTIN it renders as a bill of supply, not a tax invoice** — which is
+the correct document for an unregistered seller, prints no GSTIN, and says
+plainly that no GST was charged separately. Fill in `TAX` in `src/data/tax.ts`
+and it becomes a tax invoice with HSN codes and the rate split.
+
+CGST + SGST when the customer is in your own state, IGST when they are not.
+Getting that backwards is not cosmetic: the customer cannot claim credit against
+the wrong head and your returns will not reconcile.
+
+---
+
+## Track your order
+
+`/orders/track` — order number plus the email it was placed with. No account, no
+password to store, no database of people.
+
+The endpoint is written so it **cannot be used to discover which order numbers
+exist**. Wrong email, wrong number, and both wrong return byte-identical
+responses; anything else would be an oracle for guessing numbers and then
+brute-forcing addresses against them. Eight attempts per five minutes per
+address. `scripts/invoice-check.mjs` compares the three failure bodies for
+equality.
+
+The invoice link is a signed token that expires in thirty minutes, so the
+customer's email never lands in a URL — and therefore never in browser history,
+a Referer header, or a shared link.
 
 ---
 

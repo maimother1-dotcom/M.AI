@@ -60,7 +60,16 @@ schemas in `src/lib/validation.ts` reject those on purpose.
    transaction on a checked-out client; a second `pool.query()` inside it deadlocks the pool
    under exactly the burst the code exists to handle. That shipped once and showed up as 503s
    instead of "sold out".
-13. **The MRP on a product page is `product.priceMinor`,** the same field `priceCart()` prices
+13. **Prices are tax-INCLUSIVE.** `totalMinor = discounted subtotal + shipping`; tax is backed
+   out, never added. Adding GST on top of a declared MRP is an offence under Rule 18(2) of the
+   Packaged Commodities Rules, and it shipped once. `src/lib/gst.ts` owns the split and both
+   `priceCart()` and `buildInvoice()` must import it rather than reimplementing it.
+14. **An invoice serial is issued once and never reissued.** Two documents in circulation for
+   one sale is worse than a gap in the series, which Rule 46 tolerates.
+15. **`/api/orders/lookup` must not distinguish its failures.** Wrong order number, wrong email
+   and both wrong return identical bodies. Any difference turns it into an enumeration oracle,
+   and it is the only gate on a customer's address.
+16. **The MRP on a product page is `product.priceMinor`,** the same field `priceCart()` prices
    from. Never render the declaration from a separate source, or the declared MRP and the
    charged amount can drift apart — which is a Legal Metrology offence as well as a bug.
 
@@ -90,6 +99,7 @@ ADMIN_EMAIL=… ADMIN_PASSWORD=… ADMIN_TOTP_SECRET=… node scripts/admin-flow
 ADMIN_EMAIL=… ADMIN_PASSWORD=… ADMIN_TOTP_SECRET=… node scripts/orders-check.mjs   # 39 file, 40 Postgres
 ADMIN_EMAIL=… ADMIN_PASSWORD=… ADMIN_TOTP_SECRET=… node scripts/shiprocket-check.mjs # 27/27
 DATABASE_URL=… ADMIN_EMAIL=… …  node scripts/stock-check.mjs                          # 29/29
+node scripts/invoice-check.mjs                                                        # 35/35
 ```
 
 Sign-in allows five attempts per fifteen minutes and the bucket is per-IP, so every suite

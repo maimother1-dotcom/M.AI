@@ -4,6 +4,7 @@ import { Motif, Wordmark } from "@/components/brand/Motif";
 import { NewsletterForm } from "@/components/layout/NewsletterForm";
 
 const HELP_LINKS = [
+  { href: "/orders/track", label: "Track your order" },
   { href: "/help/shipping", label: "Shipping" },
   { href: "/help/returns", label: "Returns & exchanges" },
   { href: "/help/size-guide", label: "Size guide" },

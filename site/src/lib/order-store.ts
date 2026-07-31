@@ -92,6 +92,10 @@ export interface StoredOrder {
 
   /** Whether this order is holding stock. See settleStock(). */
   stockState?: StockState;
+
+  /** Tax invoice serial, once issued. Never reissued. */
+  invoiceNumber?: string;
+  invoiceAt?: string;
 }
 
 /**
@@ -394,6 +398,20 @@ const SCHEMA = `
   -- Whether this order is holding inventory. See settleStock().
   alter table orders add column if not exists stock_state text;
   create index if not exists orders_stock_state_idx on orders (stock_state, created_at);
+
+  -- The tax invoice serial, once issued. See issueInvoiceNumber().
+  alter table orders add column if not exists invoice_number text;
+  alter table orders add column if not exists invoice_at timestamptz;
+  create unique index if not exists orders_invoice_number_idx on orders (invoice_number)
+    where invoice_number is not null;
+
+  -- Rule 46 wants a consecutive serial unique within a financial year, so the
+  -- counter is per year and the database owns it. Two orders paid in the same
+  -- millisecond must not be able to take the same number.
+  create table if not exists invoice_counters (
+    financial_year text primary key,
+    last_serial     bigint not null default 0
+  );
 `;
 
 /** Columns are nullable in SQL, and an absent field is not the same as `null` here. */
@@ -417,6 +435,8 @@ function rowToOrder(row: Record<string, unknown>): StoredOrder {
   const confirmationEmailAt = optional(row.confirmation_email_at, (v) => (v as Date).toISOString());
   const despatchEmailAt = optional(row.despatch_email_at, (v) => (v as Date).toISOString());
   const stockState = optional(row.stock_state, (v) => v as StockState);
+  const invoiceNumber = optional(row.invoice_number, String);
+  const invoiceAt = optional(row.invoice_at, (v) => (v as Date).toISOString());
 
   return {
     ...(fulfilmentStatus !== undefined && { fulfilmentStatus }),
@@ -429,6 +449,8 @@ function rowToOrder(row: Record<string, unknown>): StoredOrder {
     ...(confirmationEmailAt !== undefined && { confirmationEmailAt }),
     ...(despatchEmailAt !== undefined && { despatchEmailAt }),
     ...(stockState !== undefined && { stockState }),
+    ...(invoiceNumber !== undefined && { invoiceNumber }),
+    ...(invoiceAt !== undefined && { invoiceAt }),
     orderNumber: row.order_number as string,
     createdAt: (row.created_at as Date).toISOString(),
     updatedAt: (row.updated_at as Date).toISOString(),
@@ -868,6 +890,88 @@ export async function claimEmail(orderNumber: string, kind: EmailKind): Promise<
   all[orderNumber] = { ...existing, [key]: new Date().toISOString() };
   writeAll(all);
   return true;
+}
+
+/* --------------------------------------------------------------- Invoices */
+
+/**
+ * Give this order a tax invoice serial, once and only once.
+ *
+ * Rule 46 wants a consecutive number unique within a financial year, so the
+ * counter lives in the database and is incremented in the same statement that
+ * reads it. Two orders paid in the same millisecond cannot take the same number,
+ * and an order that already has one keeps it — reissuing a different serial for
+ * the same sale would put two documents in circulation for one transaction.
+ *
+ * Returns the serial, existing or new. Null when there is nowhere durable to
+ * keep a counter, because a serial that resets on restart is worse than none:
+ * duplicates in a legally numbered series are a genuine problem, and an absent
+ * number is merely an unissued invoice.
+ */
+export async function issueInvoiceNumber(
+  orderNumber: string,
+  prefix: string,
+  financialYear: string,
+): Promise<string | null> {
+  if (resolveMode() !== "postgres") {
+    const existing = readAll()[orderNumber];
+    return existing?.invoiceNumber ?? null;
+  }
+
+  const pool = await getPool();
+
+  const existing = await pool.query(
+    "select invoice_number from orders where order_number = $1",
+    [orderNumber],
+  );
+  if (!existing.rows[0]) return null;
+  if (existing.rows[0].invoice_number) return String(existing.rows[0].invoice_number);
+
+  // Increment and read in one statement; `on conflict do update` makes the row
+  // appear and advance atomically even on the first invoice of a new year.
+  const { rows } = await pool.query(
+    `insert into invoice_counters (financial_year, last_serial) values ($1, 1)
+     on conflict (financial_year) do update set last_serial = invoice_counters.last_serial + 1
+     returning last_serial`,
+    [financialYear],
+  );
+  const serial = Number(rows[0]?.last_serial ?? 0);
+  if (!serial) return null;
+
+  const number = `${prefix}/${financialYear}/${String(serial).padStart(6, "0")}`;
+
+  // Only claim it if nobody beat us to it. If they did, the number we drew is
+  // spent — a gap in the series, which Rule 46 tolerates far better than a
+  // duplicate.
+  const claimed = await pool.query(
+    `update orders set invoice_number = $2, invoice_at = $3
+      where order_number = $1 and invoice_number is null
+     returning invoice_number`,
+    [orderNumber, number, new Date().toISOString()],
+  );
+  if (claimed.rows[0]) return number;
+
+  const settled = await pool.query(
+    "select invoice_number from orders where order_number = $1",
+    [orderNumber],
+  );
+  return settled.rows[0]?.invoice_number ? String(settled.rows[0].invoice_number) : null;
+}
+
+/**
+ * Find an order by number AND email, for a customer looking up their own.
+ *
+ * Both must match. The email is compared case-insensitively because people
+ * capitalise inconsistently, and the caller is responsible for not revealing
+ * which of the two was wrong.
+ */
+export async function findOrderForCustomer(
+  orderNumber: string,
+  email: string,
+): Promise<StoredOrder | undefined> {
+  const order = await getOrder(orderNumber);
+  if (!order) return undefined;
+  return order.email.trim().toLowerCase() === email.trim().toLowerCase() ? order : undefined;
 }
 
 /* ----------------------------------------------------------------- Stock */

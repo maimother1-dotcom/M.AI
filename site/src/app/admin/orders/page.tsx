@@ -13,6 +13,7 @@ import {
 } from "@/lib/order-store";
 import { displayPrice } from "@/lib/currency";
 import { isEmailConfigured } from "@/lib/email";
+import { signOrderAccess } from "@/lib/order-access";
 import { isShiprocketEnabled } from "@/lib/shiprocket";
 import { Container } from "@/components/ui";
 
@@ -213,6 +214,7 @@ export default async function AdminOrdersPage() {
                     {order.paymentIntentId && (
                       <Row label="Order id" value={order.paymentIntentId} />
                     )}
+                    {order.invoiceNumber && <Row label="Invoice" value={order.invoiceNumber} />}
                     {order.paidAt && (
                       <Row
                         label="Paid at"
@@ -223,6 +225,17 @@ export default async function AdminOrdersPage() {
                     <Row label="Shipping" value={order.shippingMethod} />
                     {order.appliedPromo && <Row label="Promo" value={order.appliedPromo} />}
                   </dl>
+
+                  {order.status === "paid" && (
+                    <a
+                      href={`/orders/invoice?t=${encodeURIComponent(signOrderAccess(order.orderNumber))}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="link-underline mt-3 inline-block text-xs"
+                    >
+                      {order.invoiceNumber ? "View invoice" : "Preview invoice"}
+                    </a>
+                  )}
                 </section>
 
                 <section className="sm:col-span-2 lg:col-span-1">
@@ -247,7 +260,7 @@ export default async function AdminOrdersPage() {
                       <Row label="Discount" value={`−${displayPrice(order.totals.discountMinor)}`} />
                     )}
                     <Row label="Shipping" value={displayPrice(order.totals.shippingMinor)} />
-                    <Row label="GST" value={displayPrice(order.totals.taxMinor)} />
+                    <Row label="Includes GST" value={displayPrice(order.totals.taxMinor)} />
                     <Row label="Total" value={displayPrice(order.totals.totalMinor)} />
                   </dl>
                 </section>

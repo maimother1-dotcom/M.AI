@@ -7,6 +7,7 @@ import { ADMIN_COOKIE, isAdminEnabled, readSession } from "@/lib/admin/auth";
 import { describeStore, getCatalog, getOverrides } from "@/lib/admin/store";
 import { beautyCleared, isComplianceConfigured } from "@/data/compliance";
 import { describeOrderStore } from "@/lib/order-store";
+import { isGstRegistered } from "@/data/tax";
 import { Container } from "@/components/ui";
 
 export const metadata: Metadata = {
@@ -48,6 +49,11 @@ export default async function AdminPage() {
   const orderStore = await describeOrderStore();
   if (!orderStore.durable) {
     blockers.push(`Orders: ${orderStore.note}`);
+  }
+  if (!isGstRegistered()) {
+    blockers.push(
+      "No GSTIN on file. Fill in TAX in src/data/tax.ts, or every sale is documented as a bill of supply rather than a tax invoice — which is correct for an unregistered seller, and wrong the moment you cross the registration threshold.",
+    );
   }
 
   return (

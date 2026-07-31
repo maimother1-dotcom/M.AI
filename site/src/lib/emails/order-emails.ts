@@ -23,6 +23,11 @@ const MUTED = "#6B6459";
 const LINE = "#E2DCD1";
 const MADDER = "#9C3A2C";
 
+/** Absolute, because an email has no origin to resolve a relative link against. */
+function siteUrl(): string {
+  return (process.env.NEXT_PUBLIC_SITE_URL ?? "https://lindienne.com").replace(/\/$/, "");
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -82,7 +87,7 @@ function itemsTable(order: StoredOrder): string {
       ? [["Discount", `−${displayPrice(order.totals.discountMinor)}`]]
       : []),
     ["Shipping", order.totals.shippingMinor === 0 ? "Complimentary" : displayPrice(order.totals.shippingMinor)],
-    ["GST", displayPrice(order.totals.taxMinor)],
+    ["Includes GST", displayPrice(order.totals.taxMinor)],
   ]
     .map(
       ([label, value]) =>
@@ -135,6 +140,11 @@ export function orderConfirmationEmail(order: StoredOrder): Email {
      <div style="color:${INK};">${address.map(escapeHtml).join("<br>")}</div>
 
      <p style="margin:24px 0 0;font-size:12px;color:${MUTED};">
+       You can check on this order any time at <span style="color:${INK};">${escapeHtml(siteUrl())}/orders/track</span>
+       using this order number and this email address. Your invoice is there too.
+     </p>
+
+     <p style="margin:16px 0 0;font-size:12px;color:${MUTED};">
        All prices are MRP, inclusive of all taxes. Thirty-day returns on unworn pieces with tags attached;
        beauty is returnable unopened only, for hygiene reasons.
      </p>`,
@@ -149,11 +159,14 @@ ${textItems(order)}
 
 Subtotal      ${displayPrice(order.totals.subtotalMinor)}
 ${order.totals.discountMinor > 0 ? `Discount      −${displayPrice(order.totals.discountMinor)}\n` : ""}Shipping      ${order.totals.shippingMinor === 0 ? "Complimentary" : displayPrice(order.totals.shippingMinor)}
-GST           ${displayPrice(order.totals.taxMinor)}
+Includes GST  ${displayPrice(order.totals.taxMinor)}
 Total paid    ${displayPrice(order.totals.totalMinor)}
 
 Delivering to
 ${address.join("\n")}
+
+Check on this order any time at ${siteUrl()}/orders/track, using this order
+number and this email address. Your invoice is there too.
 
 All prices are MRP, inclusive of all taxes.
 Questions? Reply to this email, or write to ${COMPLIANCE.consumerCareEmail}.

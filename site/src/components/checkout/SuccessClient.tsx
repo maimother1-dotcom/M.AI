@@ -258,7 +258,7 @@ export function SuccessClient() {
               : displayPrice(order.totals.shippingMinor)
           }
         />
-        <Row label="GST" value={displayPrice(order.totals.taxMinor)} />
+        <Row label="Includes GST" value={displayPrice(order.totals.taxMinor)} />
         <div className="flex items-baseline justify-between border-t border-line pt-5">
           <span className="text-base">Total paid</span>
           <span className="font-display text-3xl tabular">

@@ -99,6 +99,14 @@ export const LIMITS = {
   /** Contact form. */
   contact: { limit: 4, windowMs: 300_000 },
   /**
+   * Looking up your own order.
+   *
+   * Tight on purpose. The credential is an order number plus the email it was
+   * placed with, and the only way to attack that is to guess repeatedly — so
+   * repeatedly is what this stops. A real customer checks once or twice.
+   */
+  orderLookup: { limit: 8, windowMs: 300_000 },
+  /**
    * Re-pricing the cart.
    *
    * Generous on purpose: the checkout page re-quotes on every shipping-method

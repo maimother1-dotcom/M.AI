@@ -32,11 +32,13 @@ import type {
 // this module (it reaches the server-only override store).
 export { MAX_QUANTITY_PER_LINE, MAX_LINES_PER_CART, FREE_SHIPPING_THRESHOLD, amountToFreeShipping };
 
+import { apportionDiscount, splitInclusive } from "@/lib/gst";
+
 /**
  * GST by category, in basis points. India charges different rates by HSN class,
  * and quoting one flat rate would make every invoice wrong.
  */
-const TAX_BPS: Record<CategorySlug, number> = {
+export const TAX_BPS: Record<CategorySlug, number> = {
   clothing: 1200,
   bags: 1800,
   shoes: 1800,
@@ -44,6 +46,9 @@ const TAX_BPS: Record<CategorySlug, number> = {
   beauty: 1800,
   accessories: 1800,
 };
+
+/** Delivery is a service, taxed at 18% and likewise inclusive in the quoted fee. */
+const SHIPPING_TAX_BPS = 1800;
 
 /* -------------------------------------------------------------------------
    Promotions
@@ -223,17 +228,9 @@ export function priceCart({
 
   const discountedSubtotal = subtotalMinor - discountMinor;
 
-  // 7. Tax, per line, on the discounted value — apportioned so the sum of the
-  //    parts equals the whole rather than drifting by a paisa.
-  for (const line of pricedLines) {
-    const product = getCatalogProduct(line.sku);
-    if (!product) continue;
-    const share = subtotalMinor === 0 ? 0 : line.lineTotalMinor / subtotalMinor;
-    const taxableValue = discountedSubtotal * share;
-    taxMinor += Math.round((taxableValue * TAX_BPS[product.category]) / 10000);
-  }
-
-  // 8. Shipping. Free over the threshold on standard; express always charges.
+  // 7. Shipping, before tax — because on a tax-INCLUSIVE catalogue the shipping
+  //    charge is itself inclusive, and the tax component of the order depends on
+  //    it. Free over the threshold on standard; express always charges.
   const currencyConfig = CURRENCIES[BASE_CURRENCY];
   let shippingMinor: number;
   if (shippingMethod === "express") {
@@ -245,7 +242,34 @@ export function priceCart({
         : currencyConfig.standardShipping;
   }
 
-  const totalMinor = discountedSubtotal + taxMinor + shippingMinor;
+  /**
+   * 8. Tax — the component ALREADY INSIDE the price, not an addition to it.
+   *
+   *    The catalogue is tax-inclusive and every product page declares its price
+   *    as "MRP … inclusive of all taxes". Adding GST on top at checkout would
+   *    charge above the declared MRP, which Rule 18(2) of the Packaged
+   *    Commodities Rules makes an offence. So this backs the tax out rather than
+   *    putting it on, and `totalMinor` below does not add it.
+   *
+   *    Per line, at that line's rate, on its share of the discounted value —
+   *    apportioned so the parts sum to the whole. `src/lib/gst.ts` owns the
+   *    arithmetic so the tax invoice cannot disagree with what was charged.
+   */
+  const lineDiscounts = apportionDiscount(
+    pricedLines.map((line) => line.lineTotalMinor),
+    discountMinor,
+  );
+  pricedLines.forEach((line, index) => {
+    const product = getCatalogProduct(line.sku);
+    if (!product) return;
+    const grossMinor = line.lineTotalMinor - (lineDiscounts[index] ?? 0);
+    taxMinor += splitInclusive(grossMinor, TAX_BPS[product.category]).taxMinor;
+  });
+  if (shippingMinor > 0) {
+    taxMinor += splitInclusive(shippingMinor, SHIPPING_TAX_BPS).taxMinor;
+  }
+
+  const totalMinor = discountedSubtotal + shippingMinor;
 
   const totals: OrderTotals = {
     subtotalMinor,

@@ -98,8 +98,6 @@ export function OrderSummary({
               }
             />
 
-            <Row label="GST" value={displayPrice(totals.taxMinor)} />
-
             <div className="mt-4 flex items-baseline justify-between border-t border-line pt-4">
               <span className="text-base">Total</span>
               <span className="font-display text-3xl tabular">
@@ -107,7 +105,9 @@ export function OrderSummary({
               </span>
             </div>
 
-            <p className="pt-1 text-[10px] text-ink-muted">Inclusive of all taxes.</p>
+            <p className="pt-1 text-[10px] text-ink-muted">
+              Inclusive of {displayPrice(totals.taxMinor)} GST. Nothing is added at the next step.
+            </p>
           </>
         )}
       </div>
