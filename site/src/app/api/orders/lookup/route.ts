@@ -8,6 +8,7 @@ import {
   issueInvoiceNumber,
 } from "@/lib/order-store";
 import { signOrderAccess } from "@/lib/order-access";
+import { listReturnsForOrder } from "@/lib/returns";
 import { LIMITS, clientKey, rateLimit } from "@/lib/rate-limit";
 
 /**
@@ -97,7 +98,22 @@ export async function POST(request: Request) {
     }
   }
 
+  // Returns the customer already knows about. Amounts and status only — the
+  // reason code is our shorthand and the RMA is on the label they were sent.
+  let returns: { rma: string; status: string; refundedMinor: number; refundableMinor: number }[] = [];
+  try {
+    returns = (await listReturnsForOrder(order.orderNumber)).map((r) => ({
+      rma: r.rma,
+      status: r.status,
+      refundedMinor: r.refundedMinor,
+      refundableMinor: r.refundableMinor,
+    }));
+  } catch (error) {
+    console.error(`[lookup] could not read returns for ${order.orderNumber}:`, error);
+  }
+
   return NextResponse.json({
+    returns,
     orderNumber: order.orderNumber,
     placedAt: order.createdAt,
     status: order.status,

@@ -69,7 +69,17 @@ schemas in `src/lib/validation.ts` reject those on purpose.
 15. **`/api/orders/lookup` must not distinguish its failures.** Wrong order number, wrong email
    and both wrong return identical bodies. Any difference turns it into an enumeration oracle,
    and it is the only gate on a customer's address.
-16. **The MRP on a product page is `product.priceMinor`,** the same field `priceCart()` prices
+16. **A refund amount is never in a request.** `/api/admin/returns` has no field for one and
+   `.strict()` rejects a body that adds one. The value comes from what the customer paid for
+   the pieces coming back. This is the only endpoint that moves money out — treat any change
+   to it as a change to the pricing authority.
+17. **A refund is claimed before the processor is called, never after.** One statement,
+   `where status = 'received' and refunded_minor = 0`. Failing after the claim leaves a
+   visibly-wrong zero-amount record a human can fix; the other order refunds twice.
+18. **Stock returns when the parcel does, not when the refund does,** and `restock()` is an
+   increment. Reading `availableFor()` and writing it back as `on_hand` would erase every live
+   reservation — that bug was caught in review, not in production.
+19. **The MRP on a product page is `product.priceMinor`,** the same field `priceCart()` prices
    from. Never render the declaration from a separate source, or the declared MRP and the
    charged amount can drift apart — which is a Legal Metrology offence as well as a bug.
 
@@ -100,6 +110,7 @@ ADMIN_EMAIL=… ADMIN_PASSWORD=… ADMIN_TOTP_SECRET=… node scripts/orders-che
 ADMIN_EMAIL=… ADMIN_PASSWORD=… ADMIN_TOTP_SECRET=… node scripts/shiprocket-check.mjs # 27/27
 DATABASE_URL=… ADMIN_EMAIL=… …  node scripts/stock-check.mjs                          # 29/29
 node scripts/invoice-check.mjs                                                        # 35/35
+DATABASE_URL=… ADMIN_EMAIL=… …  node scripts/returns-check.mjs                        # 32/32
 ```
 
 Sign-in allows five attempts per fifteen minutes and the bucket is per-IP, so every suite

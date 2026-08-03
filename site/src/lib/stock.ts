@@ -266,6 +266,26 @@ export async function availableFor(skus: string[]): Promise<Map<string, number>>
   }
 }
 
+/**
+ * Put returned pieces back on the shelf.
+ *
+ * An increment, not a set. `availableFor()` reports `on_hand - reserved`, so
+ * reading that and writing it back as `on_hand` would silently erase every hold
+ * a checkout in progress was relying on. The only safe restock is one Postgres
+ * does arithmetic on.
+ */
+export async function restock(lines: StockLine[]): Promise<void> {
+  if (!isStockLedgerEnabled() || lines.length === 0) return;
+  await ensureReady();
+  const pool = await getPool();
+  for (const line of lines) {
+    await pool.query(
+      "update stock set on_hand = on_hand + $2, updated_at = now() where sku = $1",
+      [line.sku, Math.max(0, Math.floor(line.quantity))],
+    );
+  }
+}
+
 /** Set the shelf count directly. The admin's stock field writes through here. */
 export async function setOnHand(sku: string, onHand: number): Promise<void> {
   if (!isStockLedgerEnabled()) return;

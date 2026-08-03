@@ -240,3 +240,64 @@ L'INDIENNE — Paris fell for India first`;
     replyTo: COMPLIANCE.consumerCareEmail,
   };
 }
+
+/* -------------------------------------------------------------------------
+   3. Refund
+   ------------------------------------------------------------------------- */
+
+/**
+ * "Your money is on its way back."
+ *
+ * Sent when the refund has actually been accepted by the processor, never when
+ * it was merely requested. The settlement time is stated because it is the next
+ * question every customer asks, and answering it in advance is cheaper than
+ * answering it in a reply.
+ */
+export function refundEmail(
+  to: string,
+  orderNumber: string,
+  rma: string,
+  amountMinor: number,
+): Email {
+  const html = shell(
+    "Your refund is on its way",
+    `<p style="margin:0 0 20px;">We have received your return and refunded it to the card or account you paid with.</p>
+
+     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;background:${IVORY};">
+       <tr><td style="padding:16px;">
+         <div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:${MUTED};">Refunded</div>
+         <div style="font-size:22px;margin-top:4px;">${displayPrice(amountMinor)}</div>
+         <div style="font-size:12px;color:${MUTED};margin-top:10px;">
+           Order ${escapeHtml(orderNumber)} · Return ${escapeHtml(rma)}
+         </div>
+       </td></tr>
+     </table>
+
+     <p style="margin:0;font-size:12px;color:${MUTED};">
+       Banks take five to seven working days to show a refund, and some show it dated to the
+       original payment rather than today. If it has not appeared after a week, write to
+       <span style="color:${MADDER};">${escapeHtml(COMPLIANCE.consumerCareEmail)}</span> and we
+       will chase it with the processor.
+     </p>`,
+  );
+
+  const text = `Your refund is on its way
+
+Refunded   ${displayPrice(amountMinor)}
+Order      ${orderNumber}
+Return     ${rma}
+
+Banks take five to seven working days to show a refund, and some show it dated
+to the original payment rather than today. If it has not appeared after a week,
+write to ${COMPLIANCE.consumerCareEmail} and we will chase it.
+
+L'INDIENNE — Paris fell for India first`;
+
+  return {
+    to,
+    subject: `Refund for your L'INDIENNE order ${orderNumber}`,
+    html,
+    text,
+    replyTo: COMPLIANCE.consumerCareEmail,
+  };
+}

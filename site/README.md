@@ -52,6 +52,8 @@ ADMIN_EMAIL=... ADMIN_PASSWORD=... ADMIN_TOTP_SECRET=... \
 DATABASE_URL=... ADMIN_EMAIL=... ADMIN_PASSWORD=... ADMIN_TOTP_SECRET=... \
   node scripts/stock-check.mjs     # 29 inventory checks, including a 12-way race
 node scripts/invoice-check.mjs     # 35 lookup and invoicing checks
+DATABASE_URL=... ADMIN_EMAIL=... ADMIN_PASSWORD=... ADMIN_TOTP_SECRET=... \
+  node scripts/returns-check.mjs   # 32 return and refund checks
 ```
 
 Sign-in is rate limited to five attempts per fifteen minutes, per IP, and every
@@ -567,6 +569,51 @@ equality.
 The invoice link is a signed token that expires in thirty minutes, so the
 customer's email never lands in a URL — and therefore never in browser history,
 a Referer header, or a shared link.
+
+---
+
+## Returns and refunds
+
+The returns page promises customers "no form to fill in and no portal to log
+into" — they email an order number and get a prepaid label. So there is
+deliberately **no customer-facing returns portal**. What was missing was the
+other half: a way for you to actually refund someone and get the piece back on
+the shelf. That is in `/admin/orders`, on each order.
+
+```
+requested  →  received  →  refunded
+                ↑
+         stock goes back HERE
+```
+
+Stock returns when the parcel does, not when the money does. Those are different
+days, and a piece is only sellable once it is in your hands and has passed
+inspection.
+
+**The refund amount is never in a request.** There is no field for it anywhere on
+`/api/admin/returns`, and a body carrying one is rejected outright rather than
+ignored — `scripts/returns-check.mjs` sends `refundableMinor: 9999900` and
+asserts a 400. The value is derived from what the customer actually paid for the
+specific pieces coming back, including their share of any promo discount: return
+one of two dresses bought under `MAISON10` and you get ₹6,201, not ₹6,890.
+
+Shipping comes back only when the whole order does. Sending one piece of three
+back does not undo the cost of delivering the parcel.
+
+**A refund happens at most once.** It is claimed with a single `where status =
+'received' and refunded_minor = 0` update before the processor is called, so a
+double-click, a retry and three simultaneous requests produce one refund between
+them. Razorpay's own idempotency header carries the RMA as a second line of
+defence. If the processor refuses, the claim is released so it can be retried
+once the cause is fixed.
+
+Claiming *before* calling the processor is the deliberate direction: the failure
+mode is a return marked refunded with a zero amount, which is visibly wrong in
+the admin and a human fixes. The other order risks refunding twice, which is
+money gone with no record to attribute it to.
+
+Returns need `DATABASE_URL`. A refund that is not recorded is worse than one not
+issued.
 
 ---
 

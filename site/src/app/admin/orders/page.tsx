@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { AdminNav } from "@/components/admin/AdminNav";
 import { FulfilButton } from "@/components/admin/FulfilButton";
+import { ReturnPanel } from "@/components/admin/ReturnPanel";
 import { ADMIN_COOKIE, isAdminEnabled, readSession } from "@/lib/admin/auth";
 import {
   countExpiredOrders,
@@ -15,6 +16,7 @@ import { displayPrice } from "@/lib/currency";
 import { isEmailConfigured } from "@/lib/email";
 import { signOrderAccess } from "@/lib/order-access";
 import { isShiprocketEnabled } from "@/lib/shiprocket";
+import { isReturnsEnabled, listReturns } from "@/lib/returns";
 import { Container } from "@/components/ui";
 
 export const metadata: Metadata = {
@@ -59,6 +61,16 @@ export default async function AdminOrdersPage() {
   const emailOn = isEmailConfigured();
   const expired = readError ? 0 : await countExpiredOrders();
   const toShip = paid.filter((o) => !SHIPPED.has(o.fulfilmentStatus ?? "unfulfilled")).length;
+
+  // One query for every return, grouped here, rather than one per order row.
+  const returnsByOrder = new Map<string, Awaited<ReturnType<typeof listReturns>>>();
+  if (isReturnsEnabled() && !readError) {
+    for (const record of await listReturns()) {
+      const list = returnsByOrder.get(record.orderNumber) ?? [];
+      list.push(record);
+      returnsByOrder.set(record.orderNumber, list);
+    }
+  }
 
   return (
     <Container className="py-12 lg:py-16">
@@ -264,6 +276,22 @@ export default async function AdminOrdersPage() {
                     <Row label="Total" value={displayPrice(order.totals.totalMinor)} />
                   </dl>
                 </section>
+
+                {isReturnsEnabled() && order.status !== "pending" && (
+                  <div className="sm:col-span-2 lg:col-span-3">
+                    <ReturnPanel
+                      orderNumber={order.orderNumber}
+                      orderLines={order.lines.map((line) => ({
+                        sku: line.sku,
+                        name: line.name,
+                        quantity: line.quantity,
+                        size: line.size,
+                        colorway: line.colorway,
+                      }))}
+                      returns={returnsByOrder.get(order.orderNumber) ?? []}
+                    />
+                  </div>
+                )}
               </div>
             </details>
           ))}

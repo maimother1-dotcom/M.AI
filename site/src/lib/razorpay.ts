@@ -173,3 +173,70 @@ export async function fetchRazorpayPayment(paymentId: string): Promise<{
     return null;
   }
 }
+
+/* -------------------------------------------------------------------------
+   Refunds
+   ------------------------------------------------------------------------- */
+
+export interface RazorpayRefund {
+  id: string;
+  amount: number;
+  status: string;
+  payment_id: string;
+}
+
+/**
+ * Refund a captured payment, in whole or in part.
+ *
+ * `amountMinor` must be computed server-side from what the customer was actually
+ * charged for the pieces coming back. Nothing a browser or a form supplied has
+ * any business reaching this function — it moves real money out.
+ *
+ * `receipt` is our own return number, and Razorpay treats it as an idempotency
+ * key: a second refund request carrying a receipt it has already seen is
+ * rejected rather than performed twice. That is the backstop behind our own
+ * claim-before-refund, because a duplicated refund is money gone with no order
+ * to attribute it to.
+ */
+export async function createRefund(input: {
+  paymentId: string;
+  amountMinor: number;
+  receipt: string;
+  notes?: Record<string, string>;
+}): Promise<RazorpayRefund> {
+  const config = getRazorpayConfig();
+  if (!config) throw new Error("Razorpay is not configured");
+  if (!Number.isInteger(input.amountMinor) || input.amountMinor <= 0) {
+    throw new Error(`Refusing to refund a nonsensical amount: ${input.amountMinor}`);
+  }
+
+  const response = await fetch(
+    `${API_BASE}/payments/${encodeURIComponent(input.paymentId)}/refund`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: authHeader(config.keyId, config.keySecret),
+        // Razorpay's own idempotency header, belt to our braces.
+        "X-Payment-Idempotency": input.receipt,
+      },
+      body: JSON.stringify({
+        amount: input.amountMinor,
+        speed: "normal",
+        receipt: input.receipt,
+        ...(input.notes && { notes: input.notes }),
+      }),
+      signal: AbortSignal.timeout(30_000),
+    },
+  );
+
+  const text = await response.text();
+  if (!response.ok) {
+    // Never echo the body to a customer — it can carry account details.
+    throw new Error(`Razorpay refund failed: HTTP ${response.status} ${text.slice(0, 300)}`);
+  }
+
+  const refund = JSON.parse(text) as RazorpayRefund;
+  if (!refund.id) throw new Error("Razorpay returned no refund id");
+  return refund;
+}

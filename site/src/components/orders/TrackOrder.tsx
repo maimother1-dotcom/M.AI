@@ -41,7 +41,17 @@ interface LookupResult {
   };
   invoiceNumber: string | null;
   invoiceToken: string | null;
+  returns?: { rma: string; status: string; refundedMinor: number; refundableMinor: number }[];
 }
+
+/** Return states in the customer's words. */
+const RETURN_STAGE: Record<string, string> = {
+  requested: "We are expecting it back",
+  received: "Received — your refund is being processed",
+  refunded: "Refunded",
+  rejected: "We could not accept this return",
+  cancelled: "Cancelled",
+};
 
 /** Plain words for each state, because "awb-assigned" means nothing to a customer. */
 const STAGE: Record<string, string> = {
@@ -239,6 +249,26 @@ function Result({ result }: { result: LookupResult }) {
             {result.shippingAddress.city}, {result.shippingAddress.state}{" "}
             {result.shippingAddress.postalCode}
           </address>
+
+          {result.returns && result.returns.length > 0 && (
+            <>
+              <p className="eyebrow mb-3 mt-8">Returns</p>
+              <ul className="space-y-2 text-sm text-ink-soft">
+                {result.returns.map((r) => (
+                  <li key={r.rma}>
+                    <span className="font-mono text-xs">{r.rma}</span> —{" "}
+                    {RETURN_STAGE[r.status] ?? r.status}
+                    {r.refundedMinor > 0 && (
+                      <span className="block text-xs text-ink-muted">
+                        {displayPrice(r.refundedMinor)} refunded. Banks take five to seven working
+                        days to show it.
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
 
           {result.invoiceToken && (
             <>
