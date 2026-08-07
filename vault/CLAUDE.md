@@ -111,9 +111,9 @@ Three LinkedIn posts every day, each with a strong image, each emailed to the ri
 
 | # | Topic | Send to |
 |---|-------|---------|
-| 1 | Indian finance — hot topic of the day | mishtisaka417@gmail.com |
-| 2 | International finance — hot topic of the day | mishtisaka417@gmail.com |
-| 3 | Indian pharma — hot topic of the day | bijoy10987@gmail.com |
+| 1 | Indian finance - hot topic of the day | mishtisaka417@gmail.com |
+| 2 | International finance - hot topic of the day | mishtisaka417@gmail.com |
+| 3 | Indian pharma - hot topic of the day | bijoy10987@gmail.com |
 
 **Standard for each:**
 - Research the actual hot topic for **today**. Never recycle yesterday's. Never invent a story.
@@ -127,9 +127,38 @@ Playbook: [[Notes/Playbooks/Morning Content Ritual]]
 
 ---
 
+## TRADING DESK
+
+Solo pharmaceutical and nutraceutical raw material trading. Buy from Chinese
+manufacturers, supply finished-formulation manufacturers. Direct, white label, or
+repack.
+
+**Front door:** `/trade-desk`. Paste anything trade related, it routes.
+**Spec work:** `/spec-match`.
+
+Eight desks in `~/.claude/agents/`: `enquiry-desk` · `spec-matcher` ·
+`vendor-desk` · `sales-desk` · `order-desk` · `billing-desk` · `support-desk` ·
+`market-desk`
+
+**Four standing rules, override anything a desk says:**
+
+1. **No spec, no quote.** No price before a spec-match gap report with zero `FAIL`
+   and zero `MISSING`, or written buyer acceptance of each deviation.
+   `MISSING` is never `PASS`.
+2. **No limit from memory.** A specification number comes from a document or is
+   written `not stated`. Never a recalled USP/EP/IP value, never a "typical".
+3. **Drafts only.** Every message to a buyer or supplier is drafted into Gmail.
+   Nothing sends without approval.
+4. **Record first.** Every enquiry gets a file and a register row, declines
+   included. Declines are the demand data.
+
+Records: `Notes/Business/Trading/` · Flowchart: [[Notes/Playbooks/Trading Flow]]
+
+---
+
 ## VAULT RULES
 
-**Folders:** `Notes/Business/` | `Notes/People/` | `Notes/Playbooks/` | `Notes/Inner Work/` | `Notes/Claude Memory/` | `Daily Notes/`
+**Folders:** `Notes/Business/` | `Notes/Business/Trading/` | `Notes/People/` | `Notes/Playbooks/` | `Notes/Inner Work/` | `Notes/Claude Memory/` | `Daily Notes/`
 
 **Daily notes format:** `5th April 2026.md` — ordinal suffix always.
 

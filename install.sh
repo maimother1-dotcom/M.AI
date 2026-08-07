@@ -80,6 +80,11 @@ if [ -d "$VAULT_DEST" ]; then
     done
     run "mkdir -p \"$VAULT_DEST/Notes/Playbooks\" \"$VAULT_DEST/Notes/Claude Memory\""
     run "cp -R \"$REPO_DIR/vault/Notes/Playbooks/.\" \"$VAULT_DEST/Notes/Playbooks/\""
+    # Trading desk: add anything new, never clobber. Once live, this folder holds
+    # real enquiries, orders, and spec masters with sourced limits in them.
+    run "mkdir -p \"$VAULT_DEST/Notes/Business/Trading\""
+    run "cp -Rn \"$REPO_DIR/vault/Notes/Business/Trading/.\" \"$VAULT_DEST/Notes/Business/Trading/\" 2>/dev/null || true"
+    warn "Trading folder: new files added, your existing records left untouched"
 else
     run "cp -R \"$REPO_DIR/vault\" \"$VAULT_DEST\""
 fi
@@ -87,18 +92,21 @@ fi
 run "mkdir -p \"$VAULT_DEST/Daily Notes\" \"$VAULT_DEST/Inbox\" \
     \"$VAULT_DEST/Notes/Business\" \"$VAULT_DEST/Notes/People\" \
     \"$VAULT_DEST/Notes/Inner Work\" \"$VAULT_DEST/Notes/Claude Memory\" \
-    \"$VAULT_DEST/Notes/Playbooks\""
+    \"$VAULT_DEST/Notes/Playbooks\" \
+    \"$VAULT_DEST/Notes/Business/Trading\"/{Enquiries,Orders,Buyers,Suppliers,Products,Registers,Reference}"
 ok "vault at $VAULT_DEST"
 
 # --- 2. claude config --------------------------------------------------------
-say "[2/9] Installing hooks, skills, and rule bank"
-run "mkdir -p \"$CLAUDE_DIR\"/{hooks,skills,rule-bank,session-locks,dashboard,credentials}"
+say "[2/9] Installing hooks, skills, agents, and rule bank"
+run "mkdir -p \"$CLAUDE_DIR\"/{hooks,skills,agents,rule-bank,session-locks,dashboard,credentials}"
 run "cp -R \"$REPO_DIR/claude-config/hooks/.\"     \"$CLAUDE_DIR/hooks/\""
 run "cp -R \"$REPO_DIR/claude-config/skills/.\"    \"$CLAUDE_DIR/skills/\""
+run "cp -R \"$REPO_DIR/claude-config/agents/.\"    \"$CLAUDE_DIR/agents/\""
 run "cp -R \"$REPO_DIR/claude-config/rule-bank/.\" \"$CLAUDE_DIR/rule-bank/\""
 run "chmod +x \"$CLAUDE_DIR\"/hooks/*.sh \"$CLAUDE_DIR\"/hooks/*.py 2>/dev/null || true"
 ok "$(find "$REPO_DIR/claude-config/rule-bank" -name '*.md' | wc -l | tr -d ' ') rules, \
-$(find "$REPO_DIR/claude-config/hooks" -type f | wc -l | tr -d ' ') hooks installed"
+$(find "$REPO_DIR/claude-config/hooks" -type f | wc -l | tr -d ' ') hooks, \
+$(find "$REPO_DIR/claude-config/agents" -name '*.md' | wc -l | tr -d ' ') agents installed"
 
 # --- 3. settings.json --------------------------------------------------------
 say "[3/9] Writing settings.json"

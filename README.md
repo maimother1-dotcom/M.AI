@@ -34,8 +34,9 @@ Safe to re-run. An existing vault is never overwritten — your notes are left a
 |---|---|
 | `~/Documents/My Vault` | Obsidian vault. Notes, tasks, daily journal, playbooks. |
 | `~/.claude/hooks/` | 14 hooks firing on session start, prompt submit, tool use, stop, and compact. |
-| `~/.claude/rule-bank/` | 117 rules. The rule engine injects the relevant ones per prompt. |
-| `~/.claude/skills/` | 5 skills: voice model, self-learn, client delivery, outreach reply, PDF generation. |
+| `~/.claude/rule-bank/` | 123 rules. The rule engine injects the relevant ones per prompt. |
+| `~/.claude/skills/` | 7 skills: voice model, self-learn, client delivery, outreach reply, PDF generation, trade desk, spec match. |
+| `~/.claude/agents/` | 8 trading desk agents: enquiry, spec match, vendor, sales, order, billing, support, market. |
 | `~/.claude/vault-vector/` | Semantic vault search over Ollama + ChromaDB, exposed as an MCP server. |
 | `~/.claude/gmail-mcp/` | Gmail MCP server. Needs OAuth before it works. |
 | `~/.claude/credentials/` | API keys. `chmod 700`, contents `600`, never committed. |
@@ -67,6 +68,30 @@ Three LinkedIn posts a day, each with an image, each researched from real news t
 | Indian pharma | bijoy10987@gmail.com |
 
 Drafts only. Nothing sends without approval. Full procedure in `vault/Notes/Playbooks/Morning Content Ritual.md`.
+
+---
+
+## Trading desk
+
+Solo pharmaceutical and nutraceutical raw material trading: buy from Chinese
+manufacturers, supply finished-formulation manufacturers. Direct shipment, white
+label, or repack.
+
+Front door is `/trade-desk`. Paste an enquiry, a spec, a COA, a supplier quote,
+or a complaint, and it routes to one of eight desks. `/spec-match` compares a
+buyer specification against a supplier COA parameter by parameter.
+
+Records live in `vault/Notes/Business/Trading/`. Flowchart and automation
+schedule in `vault/Notes/Playbooks/Trading Flow.md`.
+
+Two rules the whole desk rests on:
+
+- **No spec, no quote.** No price leaves the business without a gap report showing
+  zero failures and zero unanswered parameters. A parameter the supplier COA does
+  not state has not passed.
+- **No limit from memory.** A specification value enters the system from a
+  document or it is recorded as not stated. Product spec masters ship with blank
+  limits by design.
 
 ---
 
