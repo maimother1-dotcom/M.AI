@@ -30,7 +30,7 @@ from ..risk.stops import StopConfig
 from ..strategies import DEFAULT_WEIGHTS, build_strategies
 from ..strategies.ensemble import Ensemble, EnsembleConfig
 from .engine import BacktestConfig, Backtester
-from .metrics import Metrics, compute
+from .metrics import Metrics, aggregate_legs, compute
 
 
 @dataclass
@@ -311,23 +311,35 @@ def monte_carlo(
     initial_balance: float = 10_000.0,
     runs: int = 2000,
     seed: int = 0,
+    risk_per_trade: float = 0.005,
 ) -> dict[str, float]:
-    """Reshuffle the trade order to expose the drawdown that luck hid.
+    """Bootstrap the trade distribution to size for the run you did not get.
 
-    The realised equity curve is one draw from a distribution. Sizing should
-    survive the 95th-percentile draw, not the one that happened to occur.
+    Partial legs are merged first, then round trips are resampled **with
+    replacement** and compounded at `risk_per_trade`. Resampling matters:
+    merely reshuffling a fixed list of P&L leaves the final balance identical
+    in every run, which tells you nothing about the outcomes you were spared.
+
+    Read the p95 drawdown, not the median: position sizing has to survive the
+    unlucky ordering, because sooner or later it arrives.
     """
-    if not trades:
+    round_trips = aggregate_legs(list(trades))
+    if not round_trips:
         return {}
-    pnl = np.array([t.pnl for t in trades], dtype=float)
-    rng = np.random.default_rng(seed)
+    r_values = np.array([t.r_multiple for t in round_trips], dtype=float)
+    r_values = r_values[np.isfinite(r_values)]
+    if r_values.size == 0:
+        return {}
 
-    drawdowns = np.empty(runs)
+    rng = np.random.default_rng(seed)
+    count = len(r_values)
+    samples = rng.choice(r_values, size=(runs, count), replace=True)
+
     finals = np.empty(runs)
+    drawdowns = np.empty(runs)
     ruin = 0
     for run in range(runs):
-        shuffled = rng.permutation(pnl)
-        equity = initial_balance + np.cumsum(shuffled)
+        equity = initial_balance * np.cumprod(1.0 + risk_per_trade * samples[run])
         peak = np.maximum.accumulate(np.concatenate([[initial_balance], equity]))[1:]
         drawdowns[run] = float(np.max((peak - equity) / peak) * 100.0)
         finals[run] = equity[-1]
@@ -335,6 +347,7 @@ def monte_carlo(
             ruin += 1
 
     return {
+        "trades_per_run": float(count),
         "median_final": float(np.median(finals)),
         "p05_final": float(np.percentile(finals, 5)),
         "p95_final": float(np.percentile(finals, 95)),

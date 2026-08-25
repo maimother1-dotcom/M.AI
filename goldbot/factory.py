@@ -24,9 +24,18 @@ from .strategies.ensemble import Ensemble
 log = logging.getLogger("goldbot.factory")
 
 
-def build_ensemble(config: BotConfig) -> Ensemble:
+def build_ensemble(config: BotConfig, load_adaptive: bool = True) -> Ensemble:
+    """Build the committee.
+
+    `load_adaptive` restores the learned per-strategy multipliers, which is
+    right for live and paper trading and wrong for a backtest: a simulation
+    seeded with state from a previous live run is not reproducible, and the
+    learning it is meant to demonstrate would already have happened.
+    """
     strategies = build_strategies(config.strategies.enabled, config.strategies.params)
     ensemble = Ensemble(strategies, config.strategies.weights, config.ensemble)
+    if not load_adaptive:
+        return ensemble
     weights_file = config.runtime.state_path(config.runtime.weights_file)
     if weights_file.exists():
         ensemble.adaptive.load(weights_file)
@@ -132,5 +141,8 @@ def build_backtester(config: BotConfig) -> Backtester:
     backtest_config.costs = config.costs
     backtest_config.initial_balance = config.initial_balance
     return Backtester(
-        build_ensemble(config), build_risk(config), backtest_config, config.features
+        build_ensemble(config, load_adaptive=False),
+        build_risk(config),
+        backtest_config,
+        config.features,
     )

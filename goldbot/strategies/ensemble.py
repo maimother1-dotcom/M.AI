@@ -218,8 +218,16 @@ class Ensemble:
 
         self.last_signals = signals
         if total_weight <= 0 or gross <= 0:
+            # Nobody spoke. Still carry the signals so the caller can show why.
             return EnsembleDecision(
-                Direction.FLAT, 0.0, 0.0, 0.0, 0.0, regime, rejected="no_votes"
+                Direction.FLAT,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                regime,
+                signals=signals,
+                rejected="no_votes",
             )
 
         direction = Direction.LONG if raw > 0 else Direction.SHORT

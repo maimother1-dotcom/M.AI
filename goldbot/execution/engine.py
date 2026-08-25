@@ -276,6 +276,9 @@ class TradingEngine:
             self._close_on_flip(positions, decision, price)
             positions = self._positions()
 
+        # Size against the equity as it stands now, after this bar's fills and
+        # exits — not the snapshot taken at the top of the bar.
+        account = self.broker.account()
         plan, why = self.risk.build_plan(
             decision, view, account, positions, self.state.bars_processed, spread
         )

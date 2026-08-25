@@ -58,7 +58,7 @@ No other dependencies. OANDA support uses the standard library.
  └──────┬───────┘
         │
         ▼
- ┌──────────────┐   size = risk% × equity ÷ stop distance,
+ ┌──────────────┐   lots = risk% × equity ÷ (stop distance × $100),
  │ risk manager │   then every hard limit below
  └──────┬───────┘
         │
@@ -76,9 +76,11 @@ is still forming.
 
 ## 3. The committee
 
-Seventeen strategies, drawn from the traditions that have actually produced
-documented results, each reduced to mechanical rules and each with a regime
-affinity that determines how much say it gets.
+Seventeen strategies, drawn from the traditions that have shaped how gold is
+actually traded — floor-trader pivots, the Turtles, Connors, Bollinger, the
+session desks, and the modern order-flow school — each reduced to mechanical,
+testable rules, and each with a regime affinity that determines how much say it
+gets.
 
 ### Trend and momentum
 
@@ -122,6 +124,13 @@ is *when* they lose: the trend followers bleed in ranges, the fade strategies
 bleed in trends, the breakout strategies bleed in chop. Requiring agreement
 across families, and weighting each family by the regime it suits, converts
 seventeen mediocre edges into one that trades less often and with more reason.
+
+The shipped weights are **priors, not fitted values**: breakout and structure
+strategies start slightly heavier because that is where gold's intraday edge is
+usually found, and the oscillators start lighter because their job is to time and
+to veto rather than to lead. They were deliberately not tuned on the synthetic
+generator — fitting weights to a simulator you wrote yourself is circular. Tune
+them on your own data with `optimize`, and check the result with `walkforward`.
 
 ### Adaptive weighting
 
@@ -212,8 +221,9 @@ settings, and reports **walk-forward efficiency** — out-of-sample return divid
 by in-sample return. Below 0.4 means the tuning is fitting noise, and the
 command says so.
 
-`monte_carlo` reshuffles the trade order two thousand times to show the drawdown
-you were lucky to avoid. Size for the 95th percentile, not for what happened.
+`--montecarlo` bootstraps the round trips — resampled with replacement and
+compounded at your risk setting — to show the runs you did not get. Size for the
+95th-percentile drawdown, not for the one that happened to occur.
 
 **The look-ahead test is the one that matters.** `tests/test_no_lookahead.py`
 recomputes every feature and every strategy signal on a truncated history and
@@ -274,6 +284,7 @@ allowed day costs — before you ever place an order.
 | `live` | Trades a real account (requires both safety switches and a typed confirmation) |
 | `optimize` | Random search over weights and thresholds; `--apply` writes the winner to YAML |
 | `walkforward` | Out-of-sample validation with an efficiency score |
+| `signals` | Prints every strategy's current vote, the ensemble's verdict and the trade it would place |
 | `status` | Reads the journal: P&L, win rate, expectancy, and per-strategy attribution |
 | `data` | Exports bars to CSV |
 | `doctor` | Validates config, risk budget, feed and broker connectivity |
@@ -296,7 +307,60 @@ allowed day costs — before you ever place an order.
   adaptive weights have collapsed across the board, the market has changed and
   the configuration needs revisiting.
 
-## 11. Layout
+---
+
+## 11. Results produced in this repository
+
+All of the following comes from the **synthetic** generator, on five independent
+seeds. It is here to show the system runs end to end and that its own validation
+tools work — not as a performance claim. Read section 10 before drawing any
+conclusion from it.
+
+**Five seeds, 15,000 M15 bars each (~221 days), $10,000, 0.5% risk per trade:**
+
+| seed | return | max DD | Sharpe | profit factor | trades | win rate | expectancy |
+|---|---|---|---|---|---|---|---|
+| 7 | +28.3% | 6.4% | 2.98 | 1.50 | 445 | 56.9% | +0.21R |
+| 23 | +65.0% | 4.3% | 5.31 | 2.00 | 493 | 60.4% | +0.36R |
+| 42 | +70.9% | 6.7% | 5.32 | 1.97 | 513 | 60.0% | +0.35R |
+| 99 | +92.7% | 4.2% | 6.59 | 2.16 | 534 | 64.0% | +0.44R |
+| 123 | +95.2% | 4.3% | 6.75 | 2.27 | 514 | 62.8% | +0.45R |
+
+**Walk-forward, 12,000 bars, 3 folds, optimised in-sample and traded out-of-sample:**
+
+```
+fold 1: IS +27.5%  →  OOS  +4.1%  (102 trades, DD 9.2%)
+fold 2: IS +13.6%  →  OOS +11.3%  ( 28 trades, DD 1.6%)
+fold 3: IS +24.9%  →  OOS +25.6%  ( 98 trades, DD 2.4%)
+efficiency 0.62 · stitched OOS +45.5%, profit factor 2.52, 228 trades
+```
+
+Fold 1 is the one to look at: a 27.5% in-sample result collapsing to 4.1% out of
+sample is the random search fitting noise, caught by the tool built to catch it.
+
+**Monte Carlo, 263 round trips bootstrapped 3,000 times at 0.5% risk:**
+
+| | |
+|---|---|
+| median final | +41% |
+| 5th percentile | +23% |
+| 95th percentile | +63% |
+| median max drawdown | 3.7% |
+| **95th percentile max drawdown** | **6.1%** |
+| worst max drawdown | 13.8% |
+
+The worst bootstrap draw lands at 13.8% — just inside the 15% kill switch. On
+real data that margin will be thinner, which is the argument for starting at
+0.25% risk rather than 0.5%.
+
+**A Sharpe between 3 and 7 is not achievable on real gold.** The generator has
+no scheduled-data gaps, no liquidity holes and no regime it was not given.
+Expect materially worse on your broker's history — that is the number that
+matters, and this repository cannot produce it for you.
+
+---
+
+## 12. Layout
 
 ```
 goldbot/
@@ -307,5 +371,5 @@ goldbot/
   execution/     broker abstraction, paper/MT5/OANDA, the live engine
   backtest/      simulator, metrics, walk-forward, Monte Carlo
   default_config.yaml   the whole control surface, commented in full
-tests/           ~90 tests, including the no-look-ahead proof
+tests/           114 tests, including the no-look-ahead proof
 ```

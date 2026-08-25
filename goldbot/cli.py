@@ -28,7 +28,8 @@ from .backtest.walkforward import (
     walk_forward,
 )
 from .config import BotConfig
-from .core.features import build_features
+from .core.types import AccountState
+from .core.features import MarketView, build_features
 from .data.csv_feed import CsvFeed, write_csv
 from .data.replay import ReplayFeed
 from .data.synthetic import generate
@@ -151,7 +152,12 @@ def cmd_backtest(args) -> int:
             )
 
     if args.montecarlo and result.trades:
-        mc = monte_carlo(result.trades, cfg.initial_balance, runs=args.montecarlo)
+        mc = monte_carlo(
+            result.trades,
+            cfg.initial_balance,
+            runs=args.montecarlo,
+            risk_per_trade=cfg.risk.risk_per_trade,
+        )
         print("\nMonte Carlo (trade order reshuffled):")
         for key, value in mc.items():
             print(f"  {key:<20} {value:,.3f}")
@@ -368,6 +374,56 @@ def cmd_status(args) -> int:
     return 0
 
 
+def cmd_signals(args) -> int:
+    """What the committee thinks right now — the bot's reasoning, printed."""
+    cfg = load_config(args)
+    df = load_history(cfg)
+    features = build_features(df, cfg.features)
+    view = MarketView(df, features, len(df) - 1, cfg.symbol)
+
+    ensemble = build_ensemble(cfg)
+    decision = ensemble.evaluate(view)
+
+    print(BANNER)
+    print(f"bar        {view.index}  close {view.close:,.2f}")
+    print(f"regime     {view.regime.value}   trend bias {view.f('trend_bias'):+.2f}")
+    print(f"ATR        {view.f('atr'):.2f}  ({view.f('atr_pct'):.2f}% of price)   "
+          f"ADX {view.f('adx'):.0f}   RSI {view.f('rsi'):.0f}")
+    tradable, why = cfg.session_policy().can_trade(view.time)
+    print(f"session    {'open' if tradable else 'CLOSED — ' + why}")
+
+    print("\nvotes:")
+    for signal in sorted(decision.signals, key=lambda s: -abs(s.score)):
+        weight = ensemble.effective_weight(
+            next(s for s in ensemble.strategies if s.name == signal.name), decision.regime
+        )
+        arrow = {1: "LONG ", -1: "SHORT", 0: "  ·  "}[signal.direction.value]
+        detail = signal.reason if signal.direction.value else f"({signal.reason})"
+        print(f"  {signal.name:<18} {arrow} {signal.confidence:>4.2f} × w{weight:<5.2f}  {detail}")
+
+    print(f"\nensemble   {decision.describe()}")
+    if decision.rejected:
+        print(f"refused    {decision.rejected}")
+        return 0
+
+    risk = build_risk(cfg)
+    account = AccountState(balance=cfg.initial_balance, equity=cfg.initial_balance)
+    plan, why = risk.build_plan(
+        decision, view, account, [], len(df) - 1, cfg.costs.base_spread
+    )
+    if plan is None:
+        print(f"no trade   {why}")
+        return 0
+    print(
+        f"\nwould {plan.side.value} {plan.lots:.2f} lots @ {plan.entry:,.2f}\n"
+        f"  stop     {plan.stop_loss:,.2f}  ({plan.stop_distance:.2f} away, "
+        f"risking {plan.risk_amount:,.2f})\n"
+        f"  target   {plan.take_profit:,.2f}  ({plan.reward_risk:.2f}R)\n"
+        f"  partial  {plan.partial_tp:,.2f}  ({plan.partial_fraction:.0%} off)"
+    )
+    return 0
+
+
 def cmd_data(args) -> int:
     cfg = load_config(args)
     df = load_history(cfg)
@@ -392,7 +448,7 @@ def cmd_doctor(args) -> int:
     print(f"broker      {cfg.broker} (dry_run={cfg.runtime.dry_run})")
     print(f"data        {cfg.data.source}")
     print(f"state dir   {Path(cfg.runtime.state_dir).expanduser()}")
-    print(f"strategies  {len(build_ensemble(cfg).strategies)} enabled")
+    print(f"strategies  {len(build_ensemble(cfg, load_adaptive=False).strategies)} enabled")
 
     problems = cfg.validate()
     print("\nvalidation:", "OK" if not problems else "")
@@ -474,6 +530,9 @@ def build_parser() -> argparse.ArgumentParser:
     wf.add_argument("--train-fraction", type=float, default=0.6, dest="train_fraction")
     wf.add_argument("--iterations", type=int, default=12)
     wf.set_defaults(func=cmd_walkforward)
+
+    signals = common(subparsers.add_parser("signals", help="show the committee's current view"))
+    signals.set_defaults(func=cmd_signals)
 
     status = subparsers.add_parser("status", help="summarise the trade journal")
     status.set_defaults(func=cmd_status)
