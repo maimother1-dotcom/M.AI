@@ -6,6 +6,26 @@ An Obsidian vault that acts as long-term memory, plus a hook and rule layer that
 
 ---
 
+## goldbot — XAU/USD trading system
+
+An autonomous gold trading bot lives in [`goldbot/`](goldbot/README.md): seventeen
+strategies vote on every closed bar, an ensemble weighs them by market regime and
+by their own realised performance, and a risk manager sizes and manages the trade
+from entry to exit without further input.
+
+```bash
+pip install -r requirements.txt
+python -m goldbot doctor          # validate config, risk budget and data
+python -m goldbot backtest        # historical simulation
+python -m goldbot paper --replay  # the live engine, driven from history
+python -m goldbot live            # trade a real account (two safety switches)
+```
+
+Full documentation, including the strategy list, the risk model and the
+go-live checklist: **[goldbot/README.md](goldbot/README.md)**.
+
+---
+
 ## Install
 
 On the machine you actually work on:

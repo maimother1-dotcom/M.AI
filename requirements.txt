@@ -1,0 +1,10 @@
+# goldbot — runtime dependencies
+numpy>=1.24
+pandas>=2.0
+PyYAML>=6.0
+
+# Live MetaTrader 5 trading (Windows only; everything else runs without it)
+# MetaTrader5>=5.0.45
+
+# Tests
+# pytest>=7.4

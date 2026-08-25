@@ -33,3 +33,16 @@ next-env.d.ts
 site/data/catalog-overrides.json
 site/data/orders.enc.json
 site/data/orders.enc.json.tmp
+
+# --- goldbot ---
+.goldbot/
+goldbot-state/
+results/
+data/*.csv
+!data/README.md
+journal.jsonl
+equity.csv
+adaptive_weights.json
+engine_state.json
+goldbot.log
+.pytest_cache/

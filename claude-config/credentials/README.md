@@ -16,6 +16,11 @@ ANTHROPIC_API_KEY=sk-ant-...
 ```
 Get it: [console.anthropic.com](https://console.anthropic.com) → API Keys
 
+### goldbot.env
+Broker credentials for the gold trading bot. MT5 login/password/server, or an
+OANDA v20 token and account id. Copy `goldbot.env.template` and fill it in.
+Nothing here is ever written back to the bot's YAML config.
+
 ### gmail_credentials.json
 OAuth credentials from Google Cloud Console.
 1. Go to [Google Cloud Console](https://console.cloud.google.com)

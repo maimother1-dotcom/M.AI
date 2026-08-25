@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "goldbot"
+version = "1.0.0"
+description = "Autonomous XAU/USD trading system with a 17-strategy ensemble and hard risk limits"
+readme = "goldbot/README.md"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24", "pandas>=2.0", "PyYAML>=6.0"]
+
+[project.optional-dependencies]
+mt5 = ["MetaTrader5>=5.0.45"]
+dev = ["pytest>=7.4"]
+
+[project.scripts]
+goldbot = "goldbot.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["goldbot*"]
+
+[tool.setuptools.package-data]
+goldbot = ["default_config.yaml"]

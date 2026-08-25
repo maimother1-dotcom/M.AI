@@ -1,0 +1,159 @@
+# ---------------------------------------------------------------------------
+# goldbot — XAU/USD configuration
+#
+# This file is the whole control surface. Secrets are never stored here:
+# write ${ENV_VAR} and the value is read from the environment or from
+# ~/.claude/credentials/goldbot.env at startup.
+#
+#   python -m goldbot doctor --config goldbot/config/gold.yaml
+# ---------------------------------------------------------------------------
+
+symbol: XAUUSD
+timeframe: M15            # M5 / M15 / M30 / H1 — M15 is the tested default
+broker: paper             # paper | mt5 | oanda
+initial_balance: 10000.0
+
+# --- where bars come from --------------------------------------------------
+data:
+  source: synthetic       # synthetic | csv | mt5 | oanda
+  csv_path: null          # e.g. data/XAUUSD_M15.csv (a raw MT5 export works)
+  history_bars: 20000     # bars for backtests
+  live_bars: 1500         # bars pulled each live cycle (needs >1200 for D1 features)
+  synthetic_seed: 42
+
+# --- MetaTrader 5 (Windows only) -------------------------------------------
+mt5:
+  login: ${MT5_LOGIN}
+  password: ${MT5_PASSWORD}
+  server: ${MT5_SERVER}
+  terminal_path: null     # e.g. C:\Program Files\MetaTrader 5\terminal64.exe
+  symbol: XAUUSD          # resolved automatically if your broker uses GOLD, XAUUSD.m, …
+  deviation_points: 20
+  magic: 20260825         # tags this bot's orders; manual trades are left alone
+
+# --- OANDA v20 (macOS / Linux / Windows) -----------------------------------
+oanda:
+  token: ${OANDA_TOKEN}
+  account_id: ${OANDA_ACCOUNT_ID}
+  environment: practice   # practice | live
+  symbol: XAU_USD
+
+# --- which strategies sit on the committee ---------------------------------
+strategies:
+  enabled: null           # null = all seventeen
+  weights:
+    # trend / momentum
+    ema_stack: 1.0
+    supertrend: 1.0
+    macd_momentum: 0.8
+    turtle: 1.1
+    htf_alignment: 0.9
+    # mean reversion
+    connors_rsi2: 0.9
+    bollinger_fade: 0.8
+    vwap_reversion: 0.9
+    pivot_fade: 0.7
+    # session / volatility breakout
+    asian_breakout: 1.2
+    ny_orb: 1.2
+    squeeze: 1.0
+    prior_day_break: 0.9
+    # price structure
+    liquidity_sweep: 1.2
+    fvg_retest: 1.0
+    fib_pullback: 0.9
+    engulfing_level: 0.7
+  params: {}              # per-strategy overrides, e.g. turtle: {entry_period: 25}
+
+# --- how the votes become a decision ---------------------------------------
+ensemble:
+  entry_threshold: 0.34         # blended confidence needed to trade
+  min_agreement: 0.60           # consensus among the strategies that voted
+  min_voters: 2                 # how many must agree
+  min_families: 1               # distinct families (trend / mean-rev / …)
+  target_participation: 0.35
+  counter_trend_penalty: 0.10
+  diversity_bonus: 0.06
+  adaptive_enabled: true        # demote strategies that stop working
+  adaptive_min: 0.35
+  adaptive_max: 1.75
+  adaptive_half_life: 40
+
+# --- position sizing and the hard limits -----------------------------------
+risk:
+  risk_per_trade: 0.005         # 0.5% of equity per trade
+  confidence_scaling: true      # size between min and max factor by conviction
+  min_size_factor: 0.5
+  max_size_factor: 1.25
+  max_lots: 5.0
+  min_lots: 0.01
+  lot_step: 0.01
+  max_open_positions: 2
+  allow_hedging: false
+  max_trades_per_day: 6
+  max_daily_loss: 0.03          # stop trading for the day at -3%
+  max_daily_profit_lock: 0.06   # ... and at +6%, to stop giving it back
+  max_drawdown: 0.15            # kill switch: flat and halted at -15% from peak
+  consecutive_loss_pause: 3
+  pause_bars: 12
+  max_spread: 0.60              # skip entries when the spread is wider than this
+  min_stop_distance: 0.80
+  min_reward_risk: 1.2
+  leverage: 100
+  max_margin_utilisation: 0.25
+  streak_derisk: true
+
+# --- stops, targets and trade management -----------------------------------
+stops:
+  atr_mult: 1.8                 # initial stop distance
+  min_atr_mult: 1.0
+  max_atr_mult: 3.5
+  structure_pad: 0.25
+  take_profit_r: 2.6
+  partial_at_r: 1.0             # take half off at 1R
+  partial_fraction: 0.5
+  breakeven_at_r: 1.0
+  breakeven_offset_r: 0.08
+  trail_start_r: 1.4
+  trail_atr_mult: 2.2           # chandelier trail
+  time_stop_bars: 48
+  time_stop_min_r: 0.35
+  exit_on_flip: true
+  flip_confidence: 0.45
+
+# --- when trading is allowed ------------------------------------------------
+sessions: [london, new_york]    # sydney | tokyo | london | new_york | overlap
+friday_cutoff_hour: 19          # UTC — flat before the weekend gap
+include_nfp_blackout: true      # stand aside around Non-Farm Payrolls
+news_blackout_minutes_before: 15
+news_blackout_minutes_after: 30
+news_events: []                 # add FOMC/CPI times: ["2026-09-17T18:00:00Z"]
+
+# --- execution costs used by the backtester --------------------------------
+costs:
+  base_spread: 0.28
+  commission_per_lot: 7.0       # round turn
+  slippage: 0.05
+  swap_long_per_lot: -3.5
+  swap_short_per_lot: 0.5
+  volatility_spread_mult: 1.6
+
+backtest:
+  warmup_bars: 260
+  max_entry_slip_r: 0.5
+  resize_on_fill: true
+  order_ttl_bars: 1
+
+# --- runtime ----------------------------------------------------------------
+runtime:
+  poll_seconds: 20
+  state_dir: ~/.goldbot
+  journal_file: journal.jsonl
+  equity_file: equity.csv
+  weights_file: adaptive_weights.json
+  log_level: INFO
+  log_file: goldbot.log
+  ntfy_topic: null              # e.g. BijoyClaude — push alerts to your phone
+  dry_run: true                 # paper trading; set false only with confirm_live
+  confirm_live: false           # second switch that must be set to trade real money
+  max_cycles: 0                 # 0 = run until stopped
